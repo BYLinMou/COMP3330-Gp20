@@ -2,7 +2,7 @@
 
 This tool is a PyQt5-based desktop application for analyzing receipt images using OpenAI's Vision API. It extracts key information from receipts, such as store name, payment method, purchased items, total amount, and category, and presents the results in a user-friendly interface.
 
-This tool is designed for testing the performance of different models on processing receipts. After experimentation, our team found that **Gemini performs better than most models we tested**.
+This tool is designed for testing the performance of different models on processing receipts. After experimentation, we found that **Gemini is the best choice in terms of cost-performance and overall performance among all models we tested**.
 
 ## Features
 - **Upload Receipt Image**: Select and preview a receipt image (supports PNG, JPG, JPEG, BMP).
