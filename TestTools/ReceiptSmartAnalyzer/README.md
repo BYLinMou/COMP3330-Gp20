@@ -22,7 +22,7 @@ pip install PyQt5 openai python-dotenv
 ```
 
 ## Setup
-1. **Clone the repository** and navigate to the `TestTools/t/` directory.
+1. **Clone the repository** and navigate to the `TestTools/ReceiptSmartAnalyzer/` directory.
 2. **Configure Environment Variables**:
    - Create `.env` file and fill in your actual OpenAI API key and model as needed.
    - Do not share your `.env` file or its contents publicly.
