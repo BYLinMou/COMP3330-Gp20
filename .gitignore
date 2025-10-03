@@ -41,7 +41,9 @@ app-example
 
 # generated native folders
 /ios
-/android
+android/local.properties
+android/app/debug.keystore
+android/app/build/
 
 # VSCode
 .vscode/*
