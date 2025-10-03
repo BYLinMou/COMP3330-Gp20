@@ -65,15 +65,27 @@ jobs:
             -PMYAPP_UPLOAD_STORE_PASSWORD=${{ secrets.KEYSTORE_PASSWORD }} \
             -PMYAPP_UPLOAD_KEY_PASSWORD=${{ secrets.KEY_PASSWORD }}
 
-      - name: Rename APK
+      - name: Get version
+              id: get_version
+              run: |
+                VERSION=$(jq -r .version app.json)
+                echo "version=$VERSION" >> $GITHUB_OUTPUT
+                echo "apk_name=AuraSpendv${VERSION}.apk" >> $GITHUB_OUTPUT
+
+
+      - name: Rename APK to versioned name
         run: |
-          VERSION=$(jq -r .version app.json)
-          mv android/app/build/outputs/apk/release/app-release.apk android/app/build/outputs/apk/release/AuraSpendv${VERSION}.apk
+          echo "Building version: ${{ steps.get_version.outputs.version }}"
+          # check the generated APK
+          ls -la android/app/build/outputs/apk/release/
+          # Move the generated APK to a versioned filename (we'll verify and upload this file)
+          mv android/app/build/outputs/apk/release/app-release.apk android/app/build/outputs/apk/release/${{ steps.get_version.outputs.apk_name }}
 
       - name: Verify APK signature
         if: always()
         run: |
-          APK_PATH=android/app/build/outputs/apk/release/app-release.apk
+          # Verify the versioned APK that we will upload
+          APK_PATH=android/app/build/outputs/apk/release/${{ steps.get_version.outputs.apk_name }}
           echo "Verifying APK: $APK_PATH"
           if [ -f "$APK_PATH" ]; then
             echo "--- jarsigner verification (v1) ---"
@@ -94,17 +106,10 @@ jobs:
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-         name: android-apk
-         path: android/app/build/outputs/apk/release/AuraSpendv*.apk
-         retention-days: 30
-
-      - name: Get version
-        id: get_version
-        run: |
-          VERSION=$(jq -r .version app.json)
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "apk_name=AuraSpendv${VERSION}.apk" >> $GITHUB_OUTPUT
-
+          name: android-apk
+          path: android/app/build/outputs/apqk/release/AuraSpendv*.apk
+          retention-days: 7
+      
       - name: Create Release
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
         uses: actions/create-release@v1
