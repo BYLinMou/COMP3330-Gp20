@@ -53,8 +53,8 @@ jobs:
       - name: Build iOS Archive
         working-directory: ./ios
         run: |
-          xcodebuild -workspace *.xcworkspace \
-            -scheme * \
+          xcodebuild -workspace AuraSpend.xcworkspace \
+            -scheme AuraSpend \
             -configuration Release \
             -destination generic/platform=iOS \
             -archivePath build/App.xcarchive \
