@@ -20,6 +20,7 @@
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false
+      ,"permissions": []
     },
     "web": {
       "output": "static",
