@@ -44,7 +44,7 @@ jobs:
           echo "EXPO_PUBLIC_SUPABASE_ANON_KEY=${{ secrets.EXPO_PUBLIC_SUPABASE_ANON_KEY }}" >> .env
 
       - name: Expo prebuild
-        run: npx expo prebuild --platform ios --clear
+        run: npx expo prebuild --platform ios
 
       - name: Install CocoaPods
         working-directory: ./ios
