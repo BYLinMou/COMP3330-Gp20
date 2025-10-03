@@ -71,16 +71,16 @@ jobs:
           VERSION=$(jq -r .expo.version app.json)
           echo "Extracted version: $VERSION"
           echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "apk_name=AuraSpendv${VERSION}.apk" >> $GITHUB_OUTPUT
+          echo "apk_name=AuraSpend-v${VERSION}.apk" >> $GITHUB_OUTPUT
 
       - name: Rename APK
         run: |
-          mv android/app/build/outputs/apk/release/app-release.apk android/app/build/outputs/apk/release/AuraSpendv${{ steps.get_version.outputs.version }}.apk
+          mv android/app/build/outputs/apk/release/app-release.apk android/app/build/outputs/apk/release/AuraSpend-v${{ steps.get_version.outputs.version }}.apk
 
       - name: Verify APK signature
         if: ${{ always() }}
         run: |
-          APK_PATH="android/app/build/outputs/apk/release/AuraSpendv${{ steps.get_version.outputs.version }}.apk"
+          APK_PATH="android/app/build/outputs/apk/release/AuraSpend-v${{ steps.get_version.outputs.version }}.apk"
           echo "Verifying APK: $APK_PATH"
           if [ -f "$APK_PATH" ]; then
             echo "--- jarsigner verification (v1) ---"
@@ -102,7 +102,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: android-apk
-          path: android/app/build/outputs/apk/release/AuraSpendv*.apk
+          path: android/app/build/outputs/apk/release/AuraSpend-v*.apk
           retention-days: 30
 
       - name: Create Release
