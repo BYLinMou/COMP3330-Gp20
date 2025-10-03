@@ -19,6 +19,9 @@ jobs:
             /*
             !TestTools/
           sparse-checkout-cone-mode: false
+      # Ensure android/app directory exists
+      - name: Ensure android/app directory exists
+        run: mkdir -p android/app
       # Decode base64 keystore and save as file
       - name: Decode keystore
         run: |
