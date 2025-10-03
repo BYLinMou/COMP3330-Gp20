@@ -58,17 +58,38 @@ jobs:
 
       - name: Build Android APK
         working-directory: ./android
-        run: ./gradlew assembleRelease
-        env:
-          MYAPP_UPLOAD_STORE_FILE: my-release-key.keystore
-          MYAPP_UPLOAD_KEY_ALIAS: ${{ secrets.KEYSTORE_ALIAS }}
-          MYAPP_UPLOAD_STORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-          MYAPP_UPLOAD_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          ./gradlew assembleRelease \
+            -PMYAPP_UPLOAD_STORE_FILE=app/my-release-key.keystore \
+            -PMYAPP_UPLOAD_KEY_ALIAS=${{ secrets.KEYSTORE_ALIAS }} \
+            -PMYAPP_UPLOAD_STORE_PASSWORD=${{ secrets.KEYSTORE_PASSWORD }} \
+            -PMYAPP_UPLOAD_KEY_PASSWORD=${{ secrets.KEY_PASSWORD }}
 
       - name: Rename APK
         run: |
           VERSION=$(jq -r .version app.json)
           mv android/app/build/outputs/apk/release/app-release.apk android/app/build/outputs/apk/release/AuraSpendv${VERSION}.apk
+
+      - name: Verify APK signature
+        if: always()
+        run: |
+          APK_PATH=android/app/build/outputs/apk/release/app-release.apk
+          echo "Verifying APK: $APK_PATH"
+          if [ -f "$APK_PATH" ]; then
+            echo "--- jarsigner verification (v1) ---"
+            jarsigner -verify -verbose -certs "$APK_PATH" || true
+
+            echo "--- apksigner verification (v2/v3) if available ---"
+            APKSIGNER_CMD=$(which apksigner || true)
+            if [ -n "$APKSIGNER_CMD" ]; then
+              $APKSIGNER_CMD verify --print-certs "$APK_PATH" || true
+            else
+              echo "apksigner not found in PATH; skip apksigner check"
+            fi
+          else
+            echo "APK not found at $APK_PATH"
+            exit 1
+          fi
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
