@@ -19,6 +19,10 @@ jobs:
             /*
             !TestTools/
           sparse-checkout-cone-mode: false
+      # Decode base64 keystore and save as file
+      - name: Decode keystore
+        run: |
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > android/app/my-release-key.keystore
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -52,10 +56,63 @@ jobs:
       - name: Build Android APK
         working-directory: ./android
         run: ./gradlew assembleRelease
+        env:
+          MYAPP_UPLOAD_STORE_FILE: my-release-key.keystore
+          MYAPP_UPLOAD_KEY_ALIAS: ${{ secrets.KEYSTORE_ALIAS }}
+          MYAPP_UPLOAD_STORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          MYAPP_UPLOAD_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+
+      - name: Rename APK
+        run: |
+          VERSION=$(jq -r .version app.json)
+          mv android/app/build/outputs/apk/release/app-release.apk android/app/build/outputs/apk/release/AuraSpendv${VERSION}.apk
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: android-apk
-          path: android/app/build/outputs/apk/release/app-release.apk
-          retention-days: 30
+         name: android-apk
+         path: android/app/build/outputs/apk/release/AuraSpendv*.apk
+         retention-days: 30
+
+      - name: Get version
+        id: get_version
+        run: |
+          VERSION=$(jq -r .version app.json)
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "apk_name=AuraSpendv${VERSION}.apk" >> $GITHUB_OUTPUT
+
+      - name: Create Release
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        uses: actions/create-release@v1
+        id: create_release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: v${{ steps.get_version.outputs.version }}
+          release_name: AuraSpend v${{ steps.get_version.outputs.version }}
+          body: |
+            ## 🚀 Release v${{ steps.get_version.outputs.version }}
+            
+            ### 📱 Android APK
+            Download the latest Android APK from the assets below.
+            
+            ### 🔧 Changes
+            - Automated build from commit ${{ github.sha }}
+            
+            ### 📋 Installation Instructions
+            1. Download the APK file
+            2. Enable "Install from unknown sources" in your Android settings
+            3. Install the APK file
+          draft: false
+          prerelease: false
+
+      - name: Upload Release Asset
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: android/app/build/outputs/apk/release/${{ steps.get_version.outputs.apk_name }}
+          asset_name: ${{ steps.get_version.outputs.apk_name }}
+          asset_content_type: application/vnd.android.package-archive
