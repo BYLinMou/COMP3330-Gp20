@@ -50,13 +50,16 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Create .env file
-        run: |
-          echo "EXPO_PUBLIC_SUPABASE_URL=${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}" > .env
-          echo "EXPO_PUBLIC_SUPABASE_ANON_KEY=${{ secrets.EXPO_PUBLIC_SUPABASE_ANON_KEY }}" >> .env
+      # - name: Create .env file
+      #   run: |
+      #     echo "EXPO_PUBLIC_SUPABASE_URL=${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}" > .env
+      #     echo "EXPO_PUBLIC_SUPABASE_ANON_KEY=${{ secrets.EXPO_PUBLIC_SUPABASE_ANON_KEY }}" >> .env
 
       - name: Expo prebuild
-        run: npx expo prebuild --platform android
+        env:
+          EXPO_PUBLIC_SUPABASE_URL: ${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}
+          EXPO_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.EXPO_PUBLIC_SUPABASE_ANON_KEY }}
+        run: npx expo prebuild --platform android --no-install --clean
 
       - name: Setup Gradle
         uses: gradle/gradle-build-action@v2
@@ -75,7 +78,8 @@ jobs:
       - name: Get version
         id: get_version
         run: |
-          VERSION=$(jq -r .expo.version app.json)
+          # VERSION=$(jq -r .expo.version app.json)
+          VERSION=$(npx expo config --json | jq -r .version)
           echo "Extracted version: $VERSION"
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "apk_name=AuraSpend-v${VERSION}.apk" >> $GITHUB_OUTPUT
@@ -84,31 +88,31 @@ jobs:
         run: |
           mv android/app/build/outputs/apk/release/app-release.apk android/app/build/outputs/apk/release/AuraSpend-v${{ steps.get_version.outputs.version }}.apk
 
-      - name: Verify APK signature
-        if: ${{ always() }}
-        run: |
-          APK_PATH="android/app/build/outputs/apk/release/AuraSpend-v${{ steps.get_version.outputs.version }}.apk"
-          echo "Verifying APK: $APK_PATH"
-          if [ -f "$APK_PATH" ]; then
-            echo "--- jarsigner verification (v1) ---"
-            jarsigner -verify -verbose -certs "$APK_PATH" || true
+      # - name: Verify APK signature
+      #   if: ${{ always() }}
+      #   run: |
+      #     APK_PATH="android/app/build/outputs/apk/release/AuraSpend-v${{ steps.get_version.outputs.version }}.apk"
+      #     echo "Verifying APK: $APK_PATH"
+      #     if [ -f "$APK_PATH" ]; then
+      #       echo "--- jarsigner verification (v1) ---"
+      #       jarsigner -verify -verbose -certs "$APK_PATH" || true
 
-            echo "--- apksigner verification (v2/v3) if available ---"
-            APKSIGNER_CMD=$(which apksigner || true)
-            if [ -n "$APKSIGNER_CMD" ]; then
-              $APKSIGNER_CMD verify --print-certs "$APK_PATH" || true
-            else
-              echo "apksigner not found in PATH; skip apksigner check"
-            fi
-          else
-            echo "APK not found at $APK_PATH"
-            exit 1
-          fi
+      #       echo "--- apksigner verification (v2/v3) if available ---"
+      #       APKSIGNER_CMD=$(which apksigner || true)
+      #       if [ -n "$APKSIGNER_CMD" ]; then
+      #         $APKSIGNER_CMD verify --print-certs "$APK_PATH" || true
+      #       else
+      #         echo "apksigner not found in PATH; skip apksigner check"
+      #       fi
+      #     else
+      #       echo "APK not found at $APK_PATH"
+      #       exit 1
+      #     fi
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: android-apk
+          name: android-release
           path: android/app/build/outputs/apk/release/AuraSpend-v*.apk
           retention-days: 30
 

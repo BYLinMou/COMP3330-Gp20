@@ -1,3 +1,5 @@
+import 'dotenv/config';
+
 export default ({ config }) => {
   // Load environment variables
   const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL || '';
@@ -60,12 +62,8 @@ export default ({ config }) => {
       },
       extra: {
         // Expose env vars through expo-constants
-        supabaseUrl,
-        supabaseAnonKey,
-        // EAS Update configuration
-        eas: {
-          projectId: config?.extra?.eas?.projectId
-        }
+        supabaseUrl: process.env.EXPO_PUBLIC_SUPABASE_URL,
+        supabaseAnonKey: process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY
       }
     }
   };
