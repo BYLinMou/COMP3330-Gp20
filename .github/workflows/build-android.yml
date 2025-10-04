@@ -16,9 +16,21 @@ jobs:
         uses: actions/checkout@v4
         with:
           sparse-checkout: |
-            !
+            /*
             !TestTools/
           sparse-checkout-cone-mode: false
+      # Ensure android/app directory exists
+      - name: Ensure android/app directory exists
+        run: mkdir -p android/app
+      - name: Generate debug keystore if missing
+        run: |
+          if [ ! -f android/app/debug.keystore ]; then
+            keytool -genkey -v -keystore android/app/debug.keystore -storepass android -alias androiddebugkey -keypass android -dname "CN=Android Debug,O=Android,C=HK" -keyalg RSA -keysize 2048 -validity 10000
+          fi
+      # Decode base64 keystore and save as file
+      - name: Decode keystore
+        run: |
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > android/app/my-release-key.keystore
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -42,20 +54,100 @@ jobs:
         run: |
           echo "EXPO_PUBLIC_SUPABASE_URL=${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}" > .env
           echo "EXPO_PUBLIC_SUPABASE_ANON_KEY=${{ secrets.EXPO_PUBLIC_SUPABASE_ANON_KEY }}" >> .env
+          cat .env
 
       - name: Expo prebuild
-        run: npx expo prebuild --platform android --clear
+        env:
+          EXPO_PUBLIC_SUPABASE_URL: ${{ secrets.EXPO_PUBLIC_SUPABASE_URL }}
+          EXPO_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.EXPO_PUBLIC_SUPABASE_ANON_KEY }}
+        run: npx expo prebuild --platform android --no-install --clean
 
       - name: Setup Gradle
         uses: gradle/gradle-build-action@v2
+      - name: Grant execute permission to gradlew
+        run: chmod +x ./android/gradlew
 
       - name: Build Android APK
         working-directory: ./android
-        run: ./gradlew assembleRelease
+        run: |
+          ./gradlew assembleRelease \
+            -PMYAPP_UPLOAD_STORE_FILE=app/my-release-key.keystore \
+            -PMYAPP_UPLOAD_KEY_ALIAS=${{ secrets.KEYSTORE_ALIAS }} \
+            -PMYAPP_UPLOAD_STORE_PASSWORD=${{ secrets.KEYSTORE_PASSWORD }} \
+            -PMYAPP_UPLOAD_KEY_PASSWORD=${{ secrets.KEY_PASSWORD }}
+
+      - name: Get version
+        id: get_version
+        run: |
+          # VERSION=$(jq -r .expo.version app.json)
+          VERSION=$(npx expo config --json | jq -r .version)
+          echo "Extracted version: $VERSION"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "apk_name=AuraSpend-v${VERSION}.apk" >> $GITHUB_OUTPUT
+
+      - name: Rename APK
+        run: |
+          mv android/app/build/outputs/apk/release/app-release.apk android/app/build/outputs/apk/release/AuraSpend-v${{ steps.get_version.outputs.version }}.apk
+
+      # - name: Verify APK signature
+      #   if: ${{ always() }}
+      #   run: |
+      #     APK_PATH="android/app/build/outputs/apk/release/AuraSpend-v${{ steps.get_version.outputs.version }}.apk"
+      #     echo "Verifying APK: $APK_PATH"
+      #     if [ -f "$APK_PATH" ]; then
+      #       echo "--- jarsigner verification (v1) ---"
+      #       jarsigner -verify -verbose -certs "$APK_PATH" || true
+      #       echo "--- apksigner verification (v2/v3) if available ---"
+      #       APKSIGNER_CMD=$(which apksigner || true)
+      #       if [ -n "$APKSIGNER_CMD" ]; then
+      #         $APKSIGNER_CMD verify --print-certs "$APK_PATH" || true
+      #       else
+      #         echo "apksigner not found in PATH; skip apksigner check"
+      #       fi
+      #     else
+      #       echo "APK not found at $APK_PATH"
+      #       exit 1
+      #     fi
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: android-apk
-          path: android/app/build/outputs/apk/release/app-release.apk
+          name: android-release
+          path: android/app/build/outputs/apk/release/AuraSpend-v*.apk
           retention-days: 30
+
+      - name: Create Release
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        uses: actions/create-release@v1
+        id: create_release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: v${{ steps.get_version.outputs.version }}
+          release_name: AuraSpend v${{ steps.get_version.outputs.version }}
+          body: |
+            ## 🚀 Release v${{ steps.get_version.outputs.version }}
+            
+            ### 📱 Android APK
+            Download the latest Android APK from the assets below.
+            
+            ### 🔧 Changes
+            - Automated build from commit ${{ github.sha }}
+            
+            ### 📋 Installation Instructions
+            1. Download the APK file
+            2. Enable "Install from unknown sources" in your Android settings
+            3. Install the APK file
+          draft: false
+          prerelease: false
+
+      - name: Upload Release Asset
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: android/app/build/outputs/apk/release/${{ steps.get_version.outputs.apk_name }}
+          asset_name: ${{ steps.get_version.outputs.apk_name }}
+          asset_content_type: application/vnd.android.package-archive

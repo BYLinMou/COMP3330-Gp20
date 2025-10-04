@@ -1,11 +1,31 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import Constants from 'expo-constants';
 import { createClient } from '@supabase/supabase-js';
 import 'react-native-get-random-values';
 import 'react-native-url-polyfill/auto';
 import { Platform } from 'react-native';
 
-const url = process.env.EXPO_PUBLIC_SUPABASE_URL!;
-const anon = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY!;
+// Try to get from Constants first (for builds), then fallback to process.env (for dev)
+const url = 
+  Constants.expoConfig?.extra?.supabaseUrl || 
+  process.env.EXPO_PUBLIC_SUPABASE_URL || 
+  '';
+
+const anon = 
+  Constants.expoConfig?.extra?.supabaseAnonKey || 
+  process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || 
+  '';
+
+// Validate environment variables
+if (!url || !anon) {
+  console.error('❌ Supabase configuration error:');
+  console.error('Missing EXPO_PUBLIC_SUPABASE_URL or EXPO_PUBLIC_SUPABASE_ANON_KEY');
+  console.error('Please check your .env file or app.config.js');
+  throw new Error('Supabase environment variables are not configured');
+}
+
+console.log('Supabase URL:', url);
+console.log('Supabase Key:', anon);
 
 // Create a storage adapter that works across platforms
 const createStorageAdapter = () => {
