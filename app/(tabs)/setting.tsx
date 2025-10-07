@@ -1,8 +1,19 @@
 import { LinearGradient } from "expo-linear-gradient";
-import { ScrollView, StyleSheet, Text, View } from "react-native";
-import { ProgressBar } from "react-native-paper"; // or another progress bar library
+import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { ProgressBar } from "react-native-paper"; // 或其他进度条库
+import { supabase } from "../../src/services/supabase";
+import { useAuth } from "../../src/providers/AuthProvider";
 
 export default function HomeScreen() {
+  const { session } = useAuth();
+
+  async function handleSignOut() {
+    const { error } = await supabase.auth.signOut();
+    if (error) {
+      Alert.alert('Sign out error', error.message);
+    }
+    // 退出成功后，AuthProvider 会检测到会话变化，Gate 会自动跳转到登录页
+  }
   return (
     <ScrollView style={styles.container}>
       {/* Header */}
@@ -35,8 +46,13 @@ export default function HomeScreen() {
       {/* Spending Breakdown */}
       <View style={styles.card}>
         <Text style={styles.cardTitle}>Spending Breakdown</Text>
-        /* Pie chart / chart goes here */}
+        {/* 饼图 / 图表在这里 */}
       </View>
+
+      {/* Sign Out Button */}
+      <TouchableOpacity style={styles.signOutButton} onPress={handleSignOut}>
+        <Text style={styles.signOutButtonText}>Sign Out</Text>
+      </TouchableOpacity>
     </ScrollView>
   );
 }
@@ -67,5 +83,21 @@ const styles = StyleSheet.create({
     paddingVertical: 2,
     borderRadius: 8,
     fontSize: 12,
+  },
+  signOutButton: {
+    backgroundColor: "#ff4444",
+    padding: 16,
+    borderRadius: 12,
+    margin: 16,
+    alignItems: "center",
+    shadowColor: "#000",
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  signOutButtonText: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "bold",
   },
 });
