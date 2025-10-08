@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Alert, Button, TextInput, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { supabase } from '../../src/services/supabase';
 
 export default function SignIn() {
@@ -19,11 +20,13 @@ export default function SignIn() {
   }
 
   return (
-    <View style={{ padding: 16, gap: 12 }}>
-      <TextInput placeholder="Email" autoCapitalize="none" value={email} onChangeText={setEmail} />
-      <TextInput placeholder="Password" secureTextEntry value={password} onChangeText={setPassword} />
-      <Button title="Sign In" onPress={onSignIn} />
-      <Button title="Sign Up" onPress={onSignUp} />
-    </View>
+    <SafeAreaView style={{ flex: 1 }}>
+      <View style={{ padding: 16, gap: 12 }}>
+        <TextInput placeholder="Email" autoCapitalize="none" value={email} onChangeText={setEmail} />
+        <TextInput placeholder="Password" secureTextEntry value={password} onChangeText={setPassword} />
+        <Button title="Sign In" onPress={onSignIn} />
+        <Button title="Sign Up" onPress={onSignUp} />
+      </View>
+    </SafeAreaView>
   );
 }

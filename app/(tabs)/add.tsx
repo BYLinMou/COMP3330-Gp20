@@ -1,14 +1,16 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useState } from "react";
 import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 export default function AddScreen() {
   const [mode, setMode] = useState("manual");
 
   return (
-    <View style={styles.container}>
-      {/* Header */}
-      <Text style={styles.header}>Add Transaction</Text>
+    <SafeAreaView style={{ flex: 1 }}>
+      <View style={styles.container}>
+        {/* Header */}
+        <Text style={styles.header}>Add Transaction</Text>
 
       {/* Mode Selector */}
       <View style={styles.selector}>
@@ -42,6 +44,7 @@ export default function AddScreen() {
       {mode === "receipt" && <Text>📸 Receipt Scan Coming Soon...</Text>}
       {mode === "voice" && <Text>🎙️ Voice Input Coming Soon...</Text>}
     </View>
+    </SafeAreaView>
   );
 }
 

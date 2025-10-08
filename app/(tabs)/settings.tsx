@@ -3,6 +3,7 @@ import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "rea
 import { ProgressBar } from "react-native-paper"; // 或其他进度条库
 import { supabase } from "../../src/services/supabase";
 import { useAuth } from "../../src/providers/AuthProvider";
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 export default function HomeScreen() {
   const { session } = useAuth();
@@ -15,45 +16,47 @@ export default function HomeScreen() {
     // 退出成功后，AuthProvider 会检测到会话变化，Gate 会自动跳转到登录页
   }
   return (
-    <ScrollView style={styles.container}>
-      {/* Header */}
-      <LinearGradient colors={["#7F00FF", "#56CCF2"]} style={styles.header}>
-        <Text style={styles.appName}>AuraPet</Text>
-        <Text style={styles.subtitle}>Smart Budgeting Companion</Text>
-      </LinearGradient>
+    <SafeAreaView style={{ flex: 1 }}>
+      <ScrollView style={styles.container}>
+        {/* Header */}
+        <LinearGradient colors={["#7F00FF", "#56CCF2"]} style={styles.header}>
+          <Text style={styles.appName}>AuraPet</Text>
+          <Text style={styles.subtitle}>Smart Budgeting Companion</Text>
+        </LinearGradient>
 
-      {/* Balance Card */}
-      <LinearGradient colors={["#7F00FF", "#56CCF2"]} style={styles.card}>
-        <Text style={styles.balanceLabel}>Current Balance</Text>
-        <Text style={styles.balanceValue}>$1,247.50</Text>
-        <View style={styles.row}>
-          <Text>Income: $2500</Text>
-          <Text>Spent: $1630</Text>
+        {/* Balance Card */}
+        <LinearGradient colors={["#7F00FF", "#56CCF2"]} style={styles.card}>
+          <Text style={styles.balanceLabel}>Current Balance</Text>
+          <Text style={styles.balanceValue}>$1,247.50</Text>
+          <View style={styles.row}>
+            <Text>Income: $2500</Text>
+            <Text>Spent: $1630</Text>
+          </View>
+        </LinearGradient>
+
+        {/* Monthly Budget */}
+        <View style={styles.card}>
+          <View style={styles.row}>
+            <Text style={styles.cardTitle}>Monthly Budget</Text>
+            <Text style={styles.badge}>82% used</Text>
+          </View>
+          <Text>$1630 spent / $2000 budget</Text>
+          <ProgressBar progress={0.82} color="black" style={{ marginVertical: 8 }} />
+          <Text style={{ color: "red" }}>⚠️ You're close to your budget limit!</Text>
         </View>
-      </LinearGradient>
 
-      {/* Monthly Budget */}
-      <View style={styles.card}>
-        <View style={styles.row}>
-          <Text style={styles.cardTitle}>Monthly Budget</Text>
-          <Text style={styles.badge}>82% used</Text>
+        {/* Spending Breakdown */}
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Spending Breakdown</Text>
+          {/* 饼图 / 图表在这里 */}
         </View>
-        <Text>$1630 spent / $2000 budget</Text>
-        <ProgressBar progress={0.82} color="black" style={{ marginVertical: 8 }} />
-        <Text style={{ color: "red" }}>⚠️ You're close to your budget limit!</Text>
-      </View>
 
-      {/* Spending Breakdown */}
-      <View style={styles.card}>
-        <Text style={styles.cardTitle}>Spending Breakdown</Text>
-        {/* 饼图 / 图表在这里 */}
-      </View>
-
-      {/* Sign Out Button */}
-      <TouchableOpacity style={styles.signOutButton} onPress={handleSignOut}>
-        <Text style={styles.signOutButtonText}>Sign Out</Text>
-      </TouchableOpacity>
-    </ScrollView>
+        {/* Sign Out Button */}
+        <TouchableOpacity style={styles.signOutButton} onPress={handleSignOut}>
+          <Text style={styles.signOutButtonText}>Sign Out</Text>
+        </TouchableOpacity>
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 

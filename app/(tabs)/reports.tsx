@@ -2,6 +2,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { useState } from "react";
 import { Dimensions, ScrollView, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import { LineChart } from "react-native-chart-kit";
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 const screenWidth = Dimensions.get("window").width;
 
@@ -36,68 +37,70 @@ export default function ReportScreen() {
   const [activeTab, setActiveTab] = useState("Trends");
 
   return (
-    <ScrollView style={styles.container}>
-      {/* Total Income and Total Spent */}
-      <View style={styles.summaryRow}>
-        <LinearGradient colors={["#32CD32", "#228B22"]} style={styles.summaryCard}>
-          <Text style={styles.summaryLabel}>Total Income</Text>
-          <Text style={styles.summaryValue}>$2500.00</Text>
-          <Text style={styles.arrow}>↑</Text>
-        </LinearGradient>
-        <LinearGradient colors={["#FF4500", "#FF0000"]} style={styles.summaryCard}>
-          <Text style={styles.summaryLabel}>Total Spent</Text>
-          <Text style={styles.summaryValue}>$192.50</Text>
-          <Text style={styles.arrow}>↓</Text>
-        </LinearGradient>
-      </View>
-
-      {/* Tabs */}
-      <View style={styles.tabs}>
-        <TouchableOpacity
-          style={[styles.tabButton, activeTab === "Trends" && styles.activeTab]}
-          onPress={() => setActiveTab("Trends")}
-        >
-          <Text style={[styles.tabText, activeTab === "Trends" && styles.activeTabText]}>Trends</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.tabButton, activeTab === "Compare" && styles.activeTab]}
-          onPress={() => setActiveTab("Compare")}
-        >
-          <Text style={[styles.tabText, activeTab === "Compare" && styles.activeTabText]}>Compare</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.tabButton, activeTab === "Merchants" && styles.activeTab]}
-          onPress={() => setActiveTab("Merchants")}
-        >
-          <Text style={[styles.tabText, activeTab === "Merchants" && styles.activeTabText]}>Merchants</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.tabButton, activeTab === "Search" && styles.activeTab]}
-          onPress={() => setActiveTab("Search")}
-        >
-          <Text style={[styles.tabText, activeTab === "Search" && styles.activeTabText]}>Search</Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* Content based on active tab */}
-      {activeTab === "Trends" && (
-        <View style={styles.chartSection}>
-          <Text style={styles.chartTitle}>Spending Trends</Text>
-          <Text style={styles.chartSubtitle}>Monthly spending vs budget over time</Text>
-          <LineChart
-            data={lineData}
-            width={screenWidth - 32}
-            height={220}
-            chartConfig={chartConfig}
-            bezier // 使線條平滑
-            style={styles.chart}
-          />
+    <SafeAreaView style={{ flex: 1 }}>
+      <ScrollView style={styles.container}>
+        {/* Total Income and Total Spent */}
+        <View style={styles.summaryRow}>
+          <LinearGradient colors={["#32CD32", "#228B22"]} style={styles.summaryCard}>
+            <Text style={styles.summaryLabel}>Total Income</Text>
+            <Text style={styles.summaryValue}>$2500.00</Text>
+            <Text style={styles.arrow}>↑</Text>
+          </LinearGradient>
+          <LinearGradient colors={["#FF4500", "#FF0000"]} style={styles.summaryCard}>
+            <Text style={styles.summaryLabel}>Total Spent</Text>
+            <Text style={styles.summaryValue}>$192.50</Text>
+            <Text style={styles.arrow}>↓</Text>
+          </LinearGradient>
         </View>
-      )}
-      {activeTab === "Compare" && <Text style={styles.placeholder}>Compare Content Coming Soon...</Text>}
-      {activeTab === "Merchants" && <Text style={styles.placeholder}>Merchants Content Coming Soon...</Text>}
-      {activeTab === "Search" && <Text style={styles.placeholder}>Search Content Coming Soon...</Text>}
-    </ScrollView>
+
+        {/* Tabs */}
+        <View style={styles.tabs}>
+          <TouchableOpacity
+            style={[styles.tabButton, activeTab === "Trends" && styles.activeTab]}
+            onPress={() => setActiveTab("Trends")}
+          >
+            <Text style={[styles.tabText, activeTab === "Trends" && styles.activeTabText]}>Trends</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.tabButton, activeTab === "Compare" && styles.activeTab]}
+            onPress={() => setActiveTab("Compare")}
+          >
+            <Text style={[styles.tabText, activeTab === "Compare" && styles.activeTabText]}>Compare</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.tabButton, activeTab === "Merchants" && styles.activeTab]}
+            onPress={() => setActiveTab("Merchants")}
+          >
+            <Text style={[styles.tabText, activeTab === "Merchants" && styles.activeTabText]}>Merchants</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.tabButton, activeTab === "Search" && styles.activeTab]}
+            onPress={() => setActiveTab("Search")}
+          >
+            <Text style={[styles.tabText, activeTab === "Search" && styles.activeTabText]}>Search</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Content based on active tab */}
+        {activeTab === "Trends" && (
+          <View style={styles.chartSection}>
+            <Text style={styles.chartTitle}>Spending Trends</Text>
+            <Text style={styles.chartSubtitle}>Monthly spending vs budget over time</Text>
+            <LineChart
+              data={lineData}
+              width={screenWidth - 32}
+              height={220}
+              chartConfig={chartConfig}
+              bezier // 使線條平滑
+              style={styles.chart}
+            />
+          </View>
+        )}
+        {activeTab === "Compare" && <Text style={styles.placeholder}>Compare Content Coming Soon...</Text>}
+        {activeTab === "Merchants" && <Text style={styles.placeholder}>Merchants Content Coming Soon...</Text>}
+        {activeTab === "Search" && <Text style={styles.placeholder}>Search Content Coming Soon...</Text>}
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
