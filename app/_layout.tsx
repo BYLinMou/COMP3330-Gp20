@@ -12,12 +12,6 @@ function Gate() {
     if (loading) return;
 
     const inAuthGroup = segments[0] === '(auth)';
-    const inTabsGroup = segments[0] === '(tabs)';
-
-    // If user manually navigated to tabs, allow it (for demo mode)
-    if (inTabsGroup) {
-      return;
-    }
 
     if (!session && !inAuthGroup) {
       // Redirect to sign-in if not authenticated
@@ -30,8 +24,8 @@ function Gate() {
 
   return (
     <Stack screenOptions={{ headerShown: false }}>
-      <Stack.Screen name="(auth)/sign-in" />
-      <Stack.Screen name="(tabs)" />
+      <Stack.Screen name="(auth)" options={{ headerShown: false }} />
+      <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
     </Stack>
   );
 }

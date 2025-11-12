@@ -1,35 +1,53 @@
 import { useState } from 'react';
-import { Alert, StyleSheet, Text, TextInput, TouchableOpacity, View, ActivityIndicator } from 'react-native';
+import { Alert, StyleSheet, Text, TextInput, TouchableOpacity, View, ActivityIndicator, ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Link } from 'expo-router';
+import { Link, useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../src/services/supabase';
 import { Colors } from '../../constants/theme';
 
-export default function SignIn() {
+export default function SignUp() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const router = useRouter();
 
-  async function onSignIn() {
-    if (!email || !password) {
-      Alert.alert('Error', 'Please enter both email and password');
+  async function onSignUp() {
+    if (!email || !password || !confirmPassword) {
+      Alert.alert('Error', 'Please fill in all fields');
+      return;
+    }
+
+    if (password !== confirmPassword) {
+      Alert.alert('Error', 'Passwords do not match');
+      return;
+    }
+
+    if (password.length < 6) {
+      Alert.alert('Error', 'Password must be at least 6 characters');
       return;
     }
 
     setLoading(true);
-    const { error } = await supabase.auth.signInWithPassword({ 
-      email: email.trim(), 
-      password 
+    const { error } = await supabase.auth.signUp({
+      email: email.trim(),
+      password,
     });
     setLoading(false);
 
     if (error) {
-      Alert.alert('Sign In Error', error.message);
+      Alert.alert('Sign Up Error', error.message);
+    } else {
+      Alert.alert(
+        'Success!',
+        'Account created successfully. Please check your email to verify your account.',
+        [{ text: 'OK', onPress: () => router.replace('/(auth)/sign-in') }]
+      );
     }
-    // Success will be handled by AuthProvider
   }
 
   return (
@@ -39,16 +57,19 @@ export default function SignIn() {
         colors={[Colors.gradientStart, Colors.gradientEnd]}
         style={styles.header}
       >
+        <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+          <Ionicons name="arrow-back" size={24} color={Colors.white} />
+        </TouchableOpacity>
         <View style={styles.logoContainer}>
           <Text style={styles.logoEmoji}>🐾</Text>
         </View>
-        <Text style={styles.appName}>AuraPet</Text>
-        <Text style={styles.subtitle}>Smart Budgeting Companion</Text>
+        <Text style={styles.appName}>Create Account</Text>
+        <Text style={styles.subtitle}>Join AuraPet today</Text>
       </LinearGradient>
 
-      <View style={styles.content}>
-        <Text style={styles.welcomeText}>Welcome Back!</Text>
-        <Text style={styles.descriptionText}>Sign in to continue managing your finances</Text>
+      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+        <Text style={styles.welcomeText}>Get Started</Text>
+        <Text style={styles.descriptionText}>Create your account to start managing your finances</Text>
 
         {/* Email Input */}
         <View style={styles.inputGroup}>
@@ -74,7 +95,7 @@ export default function SignIn() {
             <Ionicons name="lock-closed-outline" size={20} color={Colors.textSecondary} />
             <TextInput
               style={styles.input}
-              placeholder="Enter your password"
+              placeholder="Create a password (min. 6 characters)"
               secureTextEntry={!showPassword}
               value={password}
               onChangeText={setPassword}
@@ -90,43 +111,59 @@ export default function SignIn() {
           </View>
         </View>
 
-        {/* Forgot Password Link */}
-        <Link href="/(auth)/forgot-password" asChild>
-          <TouchableOpacity style={styles.forgotPassword} disabled={loading}>
-            <Text style={styles.forgotPasswordText}>Forgot Password?</Text>
-          </TouchableOpacity>
-        </Link>
+        {/* Confirm Password Input */}
+        <View style={styles.inputGroup}>
+          <Text style={styles.inputLabel}>Confirm Password</Text>
+          <View style={styles.inputContainer}>
+            <Ionicons name="lock-closed-outline" size={20} color={Colors.textSecondary} />
+            <TextInput
+              style={styles.input}
+              placeholder="Confirm your password"
+              secureTextEntry={!showConfirmPassword}
+              value={confirmPassword}
+              onChangeText={setConfirmPassword}
+              editable={!loading}
+            />
+            <TouchableOpacity onPress={() => setShowConfirmPassword(!showConfirmPassword)}>
+              <Ionicons 
+                name={showConfirmPassword ? "eye-off-outline" : "eye-outline"} 
+                size={20} 
+                color={Colors.textSecondary} 
+              />
+            </TouchableOpacity>
+          </View>
+        </View>
 
-        {/* Sign In Button */}
+        {/* Sign Up Button */}
         <TouchableOpacity 
-          style={[styles.signInButton, loading && styles.buttonDisabled]} 
-          onPress={onSignIn}
+          style={[styles.signUpButton, loading && styles.buttonDisabled]} 
+          onPress={onSignUp}
           disabled={loading}
         >
           {loading ? (
             <ActivityIndicator color={Colors.white} />
           ) : (
-            <Text style={styles.signInButtonText}>Sign In</Text>
+            <Text style={styles.signUpButtonText}>Create Account</Text>
           )}
         </TouchableOpacity>
 
-        {/* Divider */}
-        <View style={styles.divider}>
-          <View style={styles.dividerLine} />
-          <Text style={styles.dividerText}>or</Text>
-          <View style={styles.dividerLine} />
-        </View>
+        {/* Terms Text */}
+        <Text style={styles.termsText}>
+          By signing up, you agree to our Terms of Service and Privacy Policy
+        </Text>
 
-        {/* Sign Up Link */}
-        <View style={styles.signUpContainer}>
-          <Text style={styles.signUpText}>Don't have an account? </Text>
-          <Link href="/(auth)/sign-up" asChild>
+        {/* Sign In Link */}
+        <View style={styles.signInContainer}>
+          <Text style={styles.signInText}>Already have an account? </Text>
+          <Link href="/(auth)/sign-in" asChild>
             <TouchableOpacity disabled={loading}>
-              <Text style={styles.signUpLink}>Sign Up</Text>
+              <Text style={styles.signInLink}>Sign In</Text>
             </TouchableOpacity>
           </Link>
         </View>
-      </View>
+
+        <View style={{ height: 40 }} />
+      </ScrollView>
     </SafeAreaView>
   );
 }
@@ -140,6 +177,13 @@ const styles = StyleSheet.create({
     paddingVertical: 40,
     paddingHorizontal: 20,
     alignItems: 'center',
+    position: 'relative',
+  },
+  backButton: {
+    position: 'absolute',
+    top: 16,
+    left: 20,
+    zIndex: 1,
   },
   logoContainer: {
     width: 80,
@@ -154,7 +198,7 @@ const styles = StyleSheet.create({
     fontSize: 40,
   },
   appName: {
-    fontSize: 36,
+    fontSize: 32,
     fontWeight: 'bold',
     color: Colors.white,
     marginBottom: 8,
@@ -204,21 +248,13 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: Colors.textPrimary,
   },
-  forgotPassword: {
-    alignSelf: 'flex-end',
-    marginBottom: 24,
-  },
-  forgotPasswordText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: Colors.primary,
-  },
-  signInButton: {
+  signUpButton: {
     backgroundColor: Colors.primary,
     borderRadius: 12,
     paddingVertical: 16,
     alignItems: 'center',
-    marginBottom: 24,
+    marginTop: 8,
+    marginBottom: 16,
     shadowColor: Colors.primary,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
@@ -228,36 +264,29 @@ const styles = StyleSheet.create({
   buttonDisabled: {
     opacity: 0.6,
   },
-  signInButtonText: {
+  signUpButtonText: {
     fontSize: 16,
     fontWeight: '700',
     color: Colors.white,
   },
-  divider: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 24,
-    gap: 12,
-  },
-  dividerLine: {
-    flex: 1,
-    height: 1,
-    backgroundColor: Colors.gray300,
-  },
-  dividerText: {
-    fontSize: 14,
+  termsText: {
+    fontSize: 12,
     color: Colors.textSecondary,
+    textAlign: 'center',
+    marginBottom: 24,
+    paddingHorizontal: 20,
+    lineHeight: 18,
   },
-  signUpContainer: {
+  signInContainer: {
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
   },
-  signUpText: {
+  signInText: {
     fontSize: 15,
     color: Colors.textSecondary,
   },
-  signUpLink: {
+  signInLink: {
     fontSize: 15,
     fontWeight: '700',
     color: Colors.primary,

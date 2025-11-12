@@ -1,35 +1,38 @@
 import { useState } from 'react';
 import { Alert, StyleSheet, Text, TextInput, TouchableOpacity, View, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { Link } from 'expo-router';
+import { Link, useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../src/services/supabase';
 import { Colors } from '../../constants/theme';
 
-export default function SignIn() {
+export default function ForgotPassword() {
   const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
-  const [showPassword, setShowPassword] = useState(false);
+  const router = useRouter();
 
-  async function onSignIn() {
-    if (!email || !password) {
-      Alert.alert('Error', 'Please enter both email and password');
+  async function onResetPassword() {
+    if (!email) {
+      Alert.alert('Error', 'Please enter your email address');
       return;
     }
 
     setLoading(true);
-    const { error } = await supabase.auth.signInWithPassword({ 
-      email: email.trim(), 
-      password 
+    const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+      redirectTo: 'auraspend://reset-password',
     });
     setLoading(false);
 
     if (error) {
-      Alert.alert('Sign In Error', error.message);
+      Alert.alert('Error', error.message);
+    } else {
+      Alert.alert(
+        'Check Your Email',
+        'We have sent you a password reset link. Please check your email inbox.',
+        [{ text: 'OK', onPress: () => router.back() }]
+      );
     }
-    // Success will be handled by AuthProvider
   }
 
   return (
@@ -39,16 +42,21 @@ export default function SignIn() {
         colors={[Colors.gradientStart, Colors.gradientEnd]}
         style={styles.header}
       >
+        <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+          <Ionicons name="arrow-back" size={24} color={Colors.white} />
+        </TouchableOpacity>
         <View style={styles.logoContainer}>
-          <Text style={styles.logoEmoji}>🐾</Text>
+          <Ionicons name="lock-closed" size={40} color={Colors.white} />
         </View>
-        <Text style={styles.appName}>AuraPet</Text>
-        <Text style={styles.subtitle}>Smart Budgeting Companion</Text>
+        <Text style={styles.appName}>Forgot Password</Text>
+        <Text style={styles.subtitle}>Reset your password</Text>
       </LinearGradient>
 
       <View style={styles.content}>
-        <Text style={styles.welcomeText}>Welcome Back!</Text>
-        <Text style={styles.descriptionText}>Sign in to continue managing your finances</Text>
+        <Text style={styles.welcomeText}>Reset Password</Text>
+        <Text style={styles.descriptionText}>
+          Enter your email address and we'll send you a link to reset your password.
+        </Text>
 
         {/* Email Input */}
         <View style={styles.inputGroup}>
@@ -67,62 +75,25 @@ export default function SignIn() {
           </View>
         </View>
 
-        {/* Password Input */}
-        <View style={styles.inputGroup}>
-          <Text style={styles.inputLabel}>Password</Text>
-          <View style={styles.inputContainer}>
-            <Ionicons name="lock-closed-outline" size={20} color={Colors.textSecondary} />
-            <TextInput
-              style={styles.input}
-              placeholder="Enter your password"
-              secureTextEntry={!showPassword}
-              value={password}
-              onChangeText={setPassword}
-              editable={!loading}
-            />
-            <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
-              <Ionicons 
-                name={showPassword ? "eye-off-outline" : "eye-outline"} 
-                size={20} 
-                color={Colors.textSecondary} 
-              />
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        {/* Forgot Password Link */}
-        <Link href="/(auth)/forgot-password" asChild>
-          <TouchableOpacity style={styles.forgotPassword} disabled={loading}>
-            <Text style={styles.forgotPasswordText}>Forgot Password?</Text>
-          </TouchableOpacity>
-        </Link>
-
-        {/* Sign In Button */}
+        {/* Reset Button */}
         <TouchableOpacity 
-          style={[styles.signInButton, loading && styles.buttonDisabled]} 
-          onPress={onSignIn}
+          style={[styles.resetButton, loading && styles.buttonDisabled]} 
+          onPress={onResetPassword}
           disabled={loading}
         >
           {loading ? (
             <ActivityIndicator color={Colors.white} />
           ) : (
-            <Text style={styles.signInButtonText}>Sign In</Text>
+            <Text style={styles.resetButtonText}>Send Reset Link</Text>
           )}
         </TouchableOpacity>
 
-        {/* Divider */}
-        <View style={styles.divider}>
-          <View style={styles.dividerLine} />
-          <Text style={styles.dividerText}>or</Text>
-          <View style={styles.dividerLine} />
-        </View>
-
-        {/* Sign Up Link */}
-        <View style={styles.signUpContainer}>
-          <Text style={styles.signUpText}>Don't have an account? </Text>
-          <Link href="/(auth)/sign-up" asChild>
+        {/* Back to Sign In Link */}
+        <View style={styles.signInContainer}>
+          <Text style={styles.signInText}>Remember your password? </Text>
+          <Link href="/(auth)/sign-in" asChild>
             <TouchableOpacity disabled={loading}>
-              <Text style={styles.signUpLink}>Sign Up</Text>
+              <Text style={styles.signInLink}>Sign In</Text>
             </TouchableOpacity>
           </Link>
         </View>
@@ -140,6 +111,13 @@ const styles = StyleSheet.create({
     paddingVertical: 40,
     paddingHorizontal: 20,
     alignItems: 'center',
+    position: 'relative',
+  },
+  backButton: {
+    position: 'absolute',
+    top: 16,
+    left: 20,
+    zIndex: 1,
   },
   logoContainer: {
     width: 80,
@@ -150,11 +128,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 16,
   },
-  logoEmoji: {
-    fontSize: 40,
-  },
   appName: {
-    fontSize: 36,
+    fontSize: 32,
     fontWeight: 'bold',
     color: Colors.white,
     marginBottom: 8,
@@ -178,9 +153,10 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: Colors.textSecondary,
     marginBottom: 32,
+    lineHeight: 22,
   },
   inputGroup: {
-    marginBottom: 20,
+    marginBottom: 24,
   },
   inputLabel: {
     fontSize: 14,
@@ -204,16 +180,7 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: Colors.textPrimary,
   },
-  forgotPassword: {
-    alignSelf: 'flex-end',
-    marginBottom: 24,
-  },
-  forgotPasswordText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: Colors.primary,
-  },
-  signInButton: {
+  resetButton: {
     backgroundColor: Colors.primary,
     borderRadius: 12,
     paddingVertical: 16,
@@ -228,36 +195,21 @@ const styles = StyleSheet.create({
   buttonDisabled: {
     opacity: 0.6,
   },
-  signInButtonText: {
+  resetButtonText: {
     fontSize: 16,
     fontWeight: '700',
     color: Colors.white,
   },
-  divider: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 24,
-    gap: 12,
-  },
-  dividerLine: {
-    flex: 1,
-    height: 1,
-    backgroundColor: Colors.gray300,
-  },
-  dividerText: {
-    fontSize: 14,
-    color: Colors.textSecondary,
-  },
-  signUpContainer: {
+  signInContainer: {
     flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
   },
-  signUpText: {
+  signInText: {
     fontSize: 15,
     color: Colors.textSecondary,
   },
-  signUpLink: {
+  signInLink: {
     fontSize: 15,
     fontWeight: '700',
     color: Colors.primary,
