@@ -2,22 +2,51 @@
 
 This project is developed for **HKU COMP3330 25-26 sem 1, Group 20**.
 
-# Group Members
+## Group Members
 
 - Xie Yee Lam
 - Chen Yifan
 - Zeng Ruo Xi
 
-# Project Overview
+## Project Overview
 
-Our goal is to build a Money Managing system that provides users with a comprehensive platform for personal finance management. The system is designed with the following key features:
+AuraSpend is a money-management app built with Expo (React Native + Expo Router) and Supabase as the backend. Key features include multi-currency support, AI-assisted receipt parsing (external tool), budgets, and analytics.
 
-- **Multi-currency Management:** Users can manage their finances in multiple currencies, making it suitable for international and local users alike. (The system is expected to fetch the latest exchange rates and automatically convert all transactions into the user's primary currency for unified management.)
-- **Analyst Functionality:** The platform allows users to analyze their financial data, providing insights and trends to help with better financial planning.
-- **AI-powered Data Entry:** Users can upload data (such as photos of receipt), and the system leverages AI to automatically fill in transaction records, reducing time cost of manual input.
-- **Saving Goals & Budget Management:** Users can set up saving goals and budgets, helping them track progress and manage their spending effectively.
-- **Future Plans:** If feasible, we aim to implement a chatbot, enabling users to interact with the system and receive financial planning advice from AI in a conversational manner.
+## Quick setup
 
----
+1. Install Node (recommended >= 20.19.4). Use nvm or Volta to manage versions.
+
+	Example (nvm):
+
+	```bash
+	curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.5/install.sh | bash
+	export NVM_DIR="$HOME/.nvm"
+	[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+	nvm install 20.19.4
+	nvm use 20.19.4
+	node -v
+	```
+
+2. Copy `.env.example` to `.env` and fill in your Supabase values (do NOT commit `.env`):
+
+	```text
+	EXPO_PUBLIC_SUPABASE_URL=https://your-project-id.supabase.co
+	EXPO_PUBLIC_SUPABASE_ANON_KEY=your-anon-key-here
+	```
+
+3. Install dependencies and start Expo:
+
+	```bash
+	npm install
+	npm run start
+	```
+
+4. Use the Expo DevTools or the terminal shortcuts to open iOS/Android simulators or web.
+
+## Notes for contributors
+
+- The auth gating logic lives in `app/_layout.tsx` and relies on `useAuth()` from `src/providers/AuthProvider.tsx`.
+- Supabase client is implemented in `src/services/supabase.ts` and reads env vars from `app.config.js` via `expo-constants.extra`.
+- `TestTools/ReceiptSmartAnalyzer` is a separate Python tool for OCR and is not required to run the mobile app.
 
 This README is a work in progress.

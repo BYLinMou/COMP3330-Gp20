@@ -3,6 +3,9 @@
 # dependencies
 node_modules/
 
+# documents
+docs/
+
 # Expo
 .expo/
 dist/
@@ -45,7 +48,7 @@ app-example
 
 # VSCode
 .vscode/*
-!.vscode/settings.json
+# !.vscode/settings.json
 
 # ios workflow
 # due to no key

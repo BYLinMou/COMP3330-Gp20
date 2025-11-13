@@ -5,7 +5,7 @@ import { Platform } from 'react-native';
 import 'react-native-get-random-values';
 import 'react-native-url-polyfill/auto';
 
-// Try to get from Constants first (for builds), then fallback to process.env (for dev)
+// Get Supabase credentials
 const url = 
   Constants.expoConfig?.extra?.supabaseUrl || 
   process.env.EXPO_PUBLIC_SUPABASE_URL || 
@@ -16,16 +16,14 @@ const anon =
   process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || 
   '';
 
-// Validate environment variables
-if (!url || !anon) {
-  console.error('❌ Supabase configuration error:');
-  console.error('Missing EXPO_PUBLIC_SUPABASE_URL or EXPO_PUBLIC_SUPABASE_ANON_KEY');
-  console.error('Please check your .env file or app.config.js');
-  throw new Error('Supabase environment variables are not configured');
+// Validate credentials
+if (!url || !anon || url.includes('your-project-id') || anon.includes('your-anon-key')) {
+  console.warn('⚠️  Supabase not configured - using demo mode');
+  console.warn('To enable authentication, set up your Supabase credentials in .env:');
+  console.warn('EXPO_PUBLIC_SUPABASE_URL=your-actual-supabase-url');
+  console.warn('EXPO_PUBLIC_SUPABASE_ANON_KEY=your-actual-anon-key');
+  throw new Error('Supabase credentials not configured');
 }
-
-console.log('Supabase URL:', url);
-console.log('Supabase Key:', anon);
 
 // Create a storage adapter that works across platforms
 const createStorageAdapter = () => {

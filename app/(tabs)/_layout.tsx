@@ -1,72 +1,71 @@
-import { Ionicons } from "@expo/vector-icons";
-import { Tabs } from "expo-router";
+import { Tabs } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
+import { Colors } from '../../constants/theme';
 
 export default function TabsLayout() {
   return (
     <Tabs
       screenOptions={{
-        headerShown: false, // Hide top navigation
-        tabBarShowLabel: true, // Show label text
-        tabBarActiveTintColor: "#7F00FF", // Active color
-        tabBarInactiveTintColor: "#999", // Inactive color
+        headerShown: false,
+        tabBarActiveTintColor: Colors.tabIconSelected,
+        tabBarInactiveTintColor: Colors.tabIconDefault,
         tabBarStyle: {
-          backgroundColor: "#fff",
-          borderTopLeftRadius: 20,
-          borderTopRightRadius: 20,
-          height: 70,
-          paddingBottom: 10,
+          backgroundColor: Colors.white,
+          borderTopWidth: 1,
+          borderTopColor: Colors.gray200,
+          paddingTop: 8,
+          paddingBottom: 8,
+          height: 60,
         },
         tabBarLabelStyle: {
           fontSize: 12,
+          fontWeight: '500',
+          marginTop: 4,
         },
       }}
     >
       <Tabs.Screen
         name="index"
         options={{
-          title: "Home",
+          title: 'Home',
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="home-outline" size={size} color={color} />
+            <Ionicons name="home" size={size} color={color} />
           ),
         }}
       />
-
       <Tabs.Screen
         name="add"
         options={{
-          title: "Add",
+          title: 'Add',
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="add-circle-outline" size={size} color={color} />
+            <Ionicons name="add-circle" size={size} color={color} />
           ),
         }}
       />
-
       <Tabs.Screen
         name="reports"
         options={{
-          title: "Reports",
+          title: 'Reports',
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="bar-chart-outline" size={size} color={color} />
+            <Ionicons name="bar-chart" size={size} color={color} />
           ),
         }}
       />
-
       <Tabs.Screen
         name="pet"
         options={{
-          title: "Pet",
+          title: 'Pet',
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="paw-outline" size={size} color={color} />
+            <Ionicons name="paw" size={size} color={color} />
           ),
         }}
       />
-
       <Tabs.Screen
         name="settings"
         options={{
-          title: "Settings",
+          title: 'Settings',
           tabBarIcon: ({ color, size }) => (
-            <Ionicons name="settings-outline" size={size} color={color} />
+            <Ionicons name="settings" size={size} color={color} />
           ),
         }}
       />

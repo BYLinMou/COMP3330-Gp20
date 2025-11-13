@@ -10,15 +10,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // 1) 启动时获取现有会话（持久化生效）
+    // Get initial session
     supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session ?? null);
+      setSession(session);
       setLoading(false);
     });
-    // 2) 监听会话变化（登录/登出/刷新）
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, s) => {
-      setSession(s ?? null);
+
+    // Listen for auth changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session);
     });
+
     return () => subscription.unsubscribe();
   }, []);
 
