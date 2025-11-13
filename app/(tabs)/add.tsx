@@ -7,6 +7,7 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import * as ImagePicker from 'expo-image-picker';
 import { Colors } from '../../constants/theme';
 import { addTransaction, getCategories, type Category } from '../../src/services/transactions';
+import { processReceiptImage, type ReceiptData, type ProcessingProgress } from '../../src/services/receipt-processor';
 import { useAuth } from '../../src/providers/AuthProvider';
 
 type InputMethod = 'manual' | 'receipt' | 'voice';
@@ -25,6 +26,7 @@ export default function AddScreen() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [loadingCategories, setLoadingCategories] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [processingReceipt, setProcessingReceipt] = useState(false);
   
   // Modal states
   const [showCategoryModal, setShowCategoryModal] = useState(false);
@@ -82,8 +84,7 @@ export default function AddScreen() {
       });
 
       if (!result.canceled) {
-        Alert.alert('Photo Selected', 'Receipt photo selected. OCR feature coming soon!');
-        // TODO: Implement OCR processing here
+        await handleReceiptImageProcessing(result.assets[0].uri);
       }
     } catch (error) {
       console.error('Error picking image:', error);
@@ -106,12 +107,67 @@ export default function AddScreen() {
       });
 
       if (!result.canceled) {
-        Alert.alert('Photo Captured', 'Receipt photo captured. OCR feature coming soon!');
-        // TODO: Implement OCR processing here
+        await handleReceiptImageProcessing(result.assets[0].uri);
       }
     } catch (error) {
       console.error('Error taking photo:', error);
       Alert.alert('Error', 'Failed to take photo.');
+    }
+  };
+
+  /**
+   * 处理收据图片：调用独立的收据处理器
+   * @param imageUri - 图片的本地 URI
+   */
+  const handleReceiptImageProcessing = async (imageUri: string) => {
+    try {
+      setProcessingReceipt(true);
+      
+      // 显示处理进度
+      let progressMessage = 'Starting receipt processing...';
+      Alert.alert('Processing Receipt', progressMessage);
+
+      // 调用独立的收据处理器（来自 receipt-processor.ts）
+      const receiptData = await processReceiptImage(imageUri, (progress: ProcessingProgress) => {
+        progressMessage = `${progress.message} (${progress.progress}%)`;
+        console.log('[Add Screen]', progressMessage);
+      });
+
+      console.log('[Add Screen] Receipt data received:', receiptData);
+
+      // 自动填充表单
+      setMerchant(receiptData.merchant);
+      setAmount(receiptData.amount.toString());
+      setDescription(receiptData.items?.join(', ') || receiptData.description || '');
+      
+      if (receiptData.date) {
+        setSelectedDate(new Date(receiptData.date));
+      }
+
+      // 尝试匹配分类
+      if (receiptData.category && categories.length > 0) {
+        const matchedCategory = categories.find(
+          cat => cat.name.toLowerCase().includes(receiptData.category!.toLowerCase())
+        );
+        if (matchedCategory) {
+          setCategoryId(matchedCategory.id);
+        }
+      }
+
+      Alert.alert(
+        '✅ Success', 
+        'Receipt information extracted! Please review the details and save.',
+        [{ text: 'OK' }]
+      );
+    } catch (error: any) {
+      console.error('[Add Screen] Receipt processing error:', error);
+      Alert.alert(
+        '❌ Processing Failed',
+        error?.message || 'Failed to process receipt. Please enter details manually.',
+        [{ text: 'OK' }]
+      );
+    } finally {
+      setProcessingReceipt(false);
     }
   };
 
@@ -139,12 +195,20 @@ export default function AddScreen() {
       // Convert amount to negative for expenses
       const numericAmount = -Math.abs(parseFloat(amount));
 
+      // Determine source based on input method
+      let source: 'manual' | 'ocr' | 'ai' = 'manual';
+      if (inputMethod === 'receipt') {
+        source = 'ocr';
+      } else if (inputMethod === 'voice') {
+        source = 'ai';
+      }
+
       const transactionData = {
         amount: numericAmount,
         occurred_at: selectedDate.toISOString(),
         merchant: merchant.trim() || description.trim(), // Use merchant or description as fallback
         category_id: categoryId || null,
-        source: inputMethod === 'manual' ? 'manual' : inputMethod === 'receipt' ? 'ocr' : 'ai',
+        source,
         note: description.trim() + (notes.trim() ? ' | ' + notes.trim() : ''), // Combine description and notes
       };
 
@@ -302,15 +366,29 @@ export default function AddScreen() {
             </View>
             <Text style={styles.uploadText}>Upload a receipt or take a photo</Text>
             <View style={styles.uploadButtonRow}>
-              <TouchableOpacity style={styles.uploadButton} onPress={handleImagePick}>
+              <TouchableOpacity 
+                style={[styles.uploadButton, processingReceipt && styles.uploadButtonDisabled]} 
+                onPress={handleImagePick}
+                disabled={processingReceipt}
+              >
                 <Ionicons name="images-outline" size={20} color={Colors.textPrimary} />
                 <Text style={styles.uploadButtonText}>Choose File</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.uploadButton} onPress={handleCameraPick}>
+              <TouchableOpacity 
+                style={[styles.uploadButton, processingReceipt && styles.uploadButtonDisabled]} 
+                onPress={handleCameraPick}
+                disabled={processingReceipt}
+              >
                 <Ionicons name="camera-outline" size={20} color={Colors.textPrimary} />
                 <Text style={styles.uploadButtonText}>Take Photo</Text>
               </TouchableOpacity>
             </View>
+            {processingReceipt && (
+              <View style={styles.processingIndicator}>
+                <ActivityIndicator color={Colors.primary} size="small" />
+                <Text style={styles.processingText}>Processing receipt...</Text>
+              </View>
+            )}
           </View>
         )}
 
@@ -627,10 +705,28 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     borderRadius: 8,
   },
+  uploadButtonDisabled: {
+    opacity: 0.5,
+  },
   uploadButtonText: {
     fontSize: 14,
     fontWeight: '600',
     color: Colors.textPrimary,
+  },
+  processingIndicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 16,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    backgroundColor: Colors.gray100,
+    borderRadius: 8,
+  },
+  processingText: {
+    fontSize: 14,
+    color: Colors.textSecondary,
+    fontWeight: '500',
   },
   card: {
     backgroundColor: Colors.white,

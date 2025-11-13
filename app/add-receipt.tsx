@@ -1,4 +1,7 @@
 // app/add-receipt.tsx
+// ⚠️ LEGACY FILE - NOT IN USE
+// This file is deprecated. Use app/(tabs)/add.tsx instead.
+
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import {
@@ -11,11 +14,31 @@ import {
   View,
   ActivityIndicator,
   Platform,
+  Image,
 } from 'react-native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Picker } from '@react-native-picker/picker';
-import { addTransaction, getCategories, type Category } from '../src/services/transactions';
+import * as ImagePicker from 'expo-image-picker';
+import { getCategories, type Category } from '../src/services/transactions';
 import { useAuth } from '../src/providers/AuthProvider';
+// Legacy imports - replaced by receipt-processor.ts
+// import { analyzeReceiptImage, type ReceiptAnalysisResult } from '../src/services/receipt';
+
+// Placeholder types for legacy compatibility
+type ReceiptAnalysisResult = {
+  success?: boolean;
+  error?: string;
+  merchant?: string;
+  amount?: number;
+  date?: string;
+  items?: string[];
+  data?: {
+    merchant?: string;
+    amount?: number;
+    date?: Date;
+    description?: string;
+  };
+};
 
 export default function AddReceipt() {
   const router = useRouter();
@@ -27,8 +50,13 @@ export default function AddReceipt() {
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [merchant, setMerchant] = useState('');
   const [categoryId, setCategoryId] = useState<string>('');
-  const [description, setDescription] = useState(''); // Changed from source to description
+  const [description, setDescription] = useState('');
   const [note, setNote] = useState('');
+
+  // Image and OCR state
+  const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [analysisResult, setAnalysisResult] = useState<ReceiptAnalysisResult | null>(null);
 
   // Categories
   const [categories, setCategories] = useState<Category[]>([]);
@@ -65,6 +93,65 @@ export default function AddReceipt() {
     }
   };
 
+  /**
+   * 选择图片并自动分析
+   */
+  const handlePickImage = async () => {
+    try {
+      // 请求图片库权限
+      const result = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!result.granted) {
+        Alert.alert('权限错误', '需要访问图片库权限');
+        return;
+      }
+
+      // 打开图片选择器
+      const pickerResult = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: false,
+        aspect: [16, 9],
+        quality: 0.8,
+      });
+
+      if (pickerResult.canceled) return;
+
+      const imageUri = pickerResult.assets[0].uri;
+      setSelectedImage(imageUri);
+      console.log('Image selected:', imageUri);
+
+      // 自动分析收据
+      await analyzeReceipt(imageUri);
+    } catch (error) {
+      console.error('Failed to pick image:', error);
+      Alert.alert('错误', '选择图片失败');
+    }
+  };
+
+  /**
+   * 分析收据图片（占位函数 - Legacy）
+   */
+  const analyzeReceipt = async (imagePath: string) => {
+    try {
+      setIsAnalyzing(true);
+      console.log('⚠️ Legacy function called - This feature is moved to add.tsx');
+      
+      // 占位实现 - 实际功能已迁移到 app/(tabs)/add.tsx
+      Alert.alert(
+        '功能已迁移',
+        '此页面已废弃，请使用主页面的 Add 功能（Receipt 模式）',
+        [
+          { text: '取消', style: 'cancel' },
+          { text: '前往', onPress: () => router.replace('/(tabs)/add') }
+        ]
+      );
+    } catch (error) {
+      console.error('Legacy function error:', error);
+      Alert.alert('错误', '此功能已迁移，请使用新的添加页面');
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
+
   const handleSubmit = async () => {
     // Validation
     if (!amount || isNaN(parseFloat(amount))) {
@@ -83,12 +170,15 @@ export default function AddReceipt() {
       // Convert amount to negative for expenses (positive for income)
       const numericAmount = parseFloat(amount);
       
+      // 导入 addTransaction
+      const { addTransaction } = await import('../src/services/transactions');
+
       await addTransaction({
         amount: numericAmount,
         occurred_at: occurredAt.toISOString(),
         merchant: merchant.trim(),
         category_id: categoryId || null,
-        source: description.trim() || null, // description stored in source field
+        source: selectedImage ? 'ocr' : 'manual',
         note: note.trim() || null,
       });
 
@@ -102,6 +192,8 @@ export default function AddReceipt() {
             setDescription('');
             setNote('');
             setOccurredAt(new Date());
+            setSelectedImage(null);
+            setAnalysisResult(null);
             router.back();
           },
         },
@@ -114,25 +206,70 @@ export default function AddReceipt() {
     }
   };
 
-  if (!session) {
-    return (
-      <View style={styles.container}>
-        <Text style={styles.errorText}>请先登录</Text>
-      </View>
-    );
-  }
-
   return (
-    <ScrollView style={styles.container}>
+    <>
+      {!session ? (
+        <View style={styles.container}>
+          <View style={styles.form}>
+            <Text style={styles.title}>请先登录</Text>
+            <TouchableOpacity
+              style={styles.submitButton}
+              onPress={() => router.push('/(auth)/sign-in')}
+            >
+              <Text style={styles.submitButtonText}>返回登录</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      ) : (
+        <ScrollView style={styles.container}>
       <View style={styles.form}>
         <Text style={styles.title}>添加交易记录</Text>
+
+        {/* Image Picker Section */}
+        <View style={styles.imageSection}>
+          {selectedImage ? (
+            <View style={styles.imagePreviewContainer}>
+              <Image source={{ uri: selectedImage }} style={styles.imagePreview} />
+              <TouchableOpacity
+                style={styles.changeImageButton}
+                onPress={handlePickImage}
+                disabled={isAnalyzing || submitting}
+              >
+                <Text style={styles.changeImageButtonText}>更换图片</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <TouchableOpacity
+              style={styles.pickImageButton}
+              onPress={handlePickImage}
+              disabled={isAnalyzing || submitting}
+            >
+              {isAnalyzing ? (
+                <ActivityIndicator color="#007AFF" size="large" />
+              ) : (
+                <View style={styles.pickImageButtonContent}>
+                  <Text style={styles.pickImageButtonText}>📸</Text>
+                  <Text style={styles.pickImageButtonLabel}>选择收据图片</Text>
+                  <Text style={styles.pickImageButtonHint}>自动识别金额、商家等信息</Text>
+                </View>
+              )}
+            </TouchableOpacity>
+          )}
+        </View>
+
+        {/* Analysis Result Display */}
+        {analysisResult && !analysisResult.success && (
+          <View style={styles.errorBox}>
+            <Text style={styles.errorText}>识别失败: {analysisResult.error}</Text>
+          </View>
+        )}
 
         {/* Amount Input */}
         <View style={styles.inputGroup}>
           <Text style={styles.label}>金额 (负数为支出,正数为收入)</Text>
           <TextInput
             style={styles.input}
-            placeholder="例如: -50.00 或 1000.00"
+            placeholder="例如: 50.00 或 1000.00"
             value={amount}
             onChangeText={setAmount}
             keyboardType="numeric"
@@ -201,9 +338,9 @@ export default function AddReceipt() {
           )}
         </View>
 
-        {/* Source Picker */}
+        {/* Description Input */}
         <View style={styles.inputGroup}>
-          <Text style={styles.label}>描述/来源</Text>
+          <Text style={styles.label}>描述 (可选)</Text>
           <TextInput
             style={styles.input}
             placeholder="例如: 工作午餐、超市购物"
@@ -250,6 +387,8 @@ export default function AddReceipt() {
         </TouchableOpacity>
       </View>
     </ScrollView>
+      )}
+    </>
   );
 }
 
@@ -267,6 +406,72 @@ const styles = StyleSheet.create({
     marginBottom: 20,
     color: '#333',
   },
+  // Image section styles
+  imageSection: {
+    marginBottom: 20,
+  },
+  imagePreviewContainer: {
+    alignItems: 'center',
+    marginBottom: 20,
+  },
+  imagePreview: {
+    width: 200,
+    height: 200,
+    borderRadius: 8,
+    marginBottom: 10,
+  },
+  pickImageButton: {
+    backgroundColor: '#fff',
+    borderWidth: 2,
+    borderColor: '#007AFF',
+    borderRadius: 12,
+    padding: 30,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 150,
+  },
+  pickImageButtonContent: {
+    alignItems: 'center',
+  },
+  pickImageButtonText: {
+    fontSize: 48,
+    marginBottom: 10,
+  },
+  pickImageButtonLabel: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#007AFF',
+    marginBottom: 5,
+  },
+  pickImageButtonHint: {
+    fontSize: 13,
+    color: '#999',
+    marginTop: 5,
+  },
+  changeImageButton: {
+    backgroundColor: '#007AFF',
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 6,
+  },
+  changeImageButtonText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  errorBox: {
+    backgroundColor: '#fee',
+    borderWidth: 1,
+    borderColor: '#f88',
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 20,
+  },
+  errorText: {
+    color: '#d00',
+    fontSize: 14,
+  },
+  // Form input styles
   inputGroup: {
     marginBottom: 20,
   },
@@ -309,6 +514,7 @@ const styles = StyleSheet.create({
   picker: {
     height: 50,
   },
+  // Button styles
   submitButton: {
     backgroundColor: '#007AFF',
     padding: 16,
@@ -337,12 +543,6 @@ const styles = StyleSheet.create({
     color: '#666',
     fontSize: 18,
     fontWeight: '600',
-  },
-  errorText: {
-    fontSize: 16,
-    color: '#999',
-    textAlign: 'center',
-    marginTop: 20,
   },
   emptyText: {
     fontSize: 14,
