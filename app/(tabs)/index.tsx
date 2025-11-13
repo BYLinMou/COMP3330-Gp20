@@ -1,34 +1,108 @@
-import React from 'react';
-import { View, Text, ScrollView, StyleSheet, Dimensions } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, ScrollView, StyleSheet, Dimensions, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../constants/theme';
+import { 
+  getRecentTransactions, 
+  getIncomeAndExpenses, 
+  getSpendingBreakdown,
+  type Transaction 
+} from '../../src/services/transactions';
+import { useAuth } from '../../src/providers/AuthProvider';
 
 const { width } = Dimensions.get('window');
 
+// Helper function to format relative time
+function getRelativeTime(dateString: string): string {
+  const date = new Date(dateString);
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffMins = Math.floor(diffMs / 60000);
+  const diffHours = Math.floor(diffMs / 3600000);
+  const diffDays = Math.floor(diffMs / 86400000);
+
+  if (diffMins < 1) return 'Just now';
+  if (diffMins < 60) return `${diffMins} minute${diffMins > 1 ? 's' : ''} ago`;
+  if (diffHours < 24) return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`;
+  if (diffDays === 1) return '1 day ago';
+  return `${diffDays} days ago`;
+}
+
 export default function HomeScreen() {
-  // Mock data
-  const balance = 1247.50;
-  const income = 2500;
-  const spent = 1630;
-  const budget = 2000;
+  const { session } = useAuth();
+  const [loading, setLoading] = useState(true);
+  const [recentTransactions, setRecentTransactions] = useState<Transaction[]>([]);
+  const [balance, setBalance] = useState(0);
+  const [income, setIncome] = useState(0);
+  const [spent, setSpent] = useState(0);
+  const [spendingData, setSpendingData] = useState<Array<{
+    category: string;
+    amount: number;
+    color: string;
+    percentage: number;
+  }>>([]);
+
+  const budget = 2000; // This could also come from Supabase
   const budgetUsed = Math.round((spent / budget) * 100);
 
-  const spendingData = [
-    { category: 'Food', amount: 450, color: Colors.chartPurple, percentage: 28 },
-    { category: 'Transport', amount: 280, color: Colors.chartCyan, percentage: 17 },
-    { category: 'Entertainment', amount: 180, color: Colors.chartOrange, percentage: 11 },
-    { category: 'Shopping', amount: 320, color: Colors.chartRed, percentage: 20 },
-    { category: 'Bills', amount: 400, color: Colors.chartGreen, percentage: 24 },
-  ];
+  // Category color mapping
+  const categoryColors: Record<string, string> = {
+    'Food': Colors.chartPurple,
+    'Transport': Colors.chartCyan,
+    'Entertainment': Colors.chartOrange,
+    'Shopping': Colors.chartRed,
+    'Bills': Colors.chartGreen,
+    'Income': Colors.success,
+  };
 
-  const recentTransactions = [
-    { id: 1, name: 'Coffee Shop', amount: -4.50, time: '2 hours ago', category: 'Food' },
-    { id: 2, name: 'Subway Ticket', amount: -2.80, time: '5 hours ago', category: 'Transport' },
-    { id: 3, name: 'Salary Deposit', amount: 2500.00, time: '1 day ago', category: 'Income' },
-    { id: 4, name: 'Netflix', amount: -12.99, time: '2 days ago', category: 'Entertainment' },
-  ];
+  useEffect(() => {
+    if (session) {
+      loadData();
+    }
+  }, [session]);
+
+  async function loadData() {
+    try {
+      setLoading(true);
+      
+      // Get current month date range
+      const now = new Date();
+      const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
+      const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+      
+      const startDate = firstDay.toISOString().split('T')[0];
+      const endDate = lastDay.toISOString().split('T')[0];
+
+      // Fetch all data in parallel
+      const [transactions, stats, breakdown] = await Promise.all([
+        getRecentTransactions(10),
+        getIncomeAndExpenses(startDate, endDate),
+        getSpendingBreakdown(startDate, endDate),
+      ]);
+
+      setRecentTransactions(transactions);
+      setIncome(stats.income);
+      setSpent(stats.expenses);
+      setBalance(stats.balance);
+
+      // Transform spending breakdown into chart data
+      const total = Object.values(breakdown).reduce<number>((sum, val) => sum + (val as number), 0);
+      const chartData = Object.entries(breakdown).map(([category, amount]) => ({
+        category,
+        amount: amount as number,
+        color: categoryColors[category] || Colors.chartPurple,
+        percentage: Math.round(((amount as number) / total) * 100),
+      }));
+      
+      setSpendingData(chartData);
+    } catch (error) {
+      console.error('Error loading dashboard data:', error);
+    } finally {
+      setLoading(false);
+    }
+  }
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -91,55 +165,68 @@ export default function HomeScreen() {
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Spending Breakdown</Text>
           
-          {/* Donut Chart */}
-          <View style={styles.chartContainer}>
-            <View style={styles.donutChart}>
-              {spendingData.map((item, index) => {
-                const totalDegrees = spendingData.reduce((sum, d) => sum + (d.percentage * 3.6), 0);
-                let startDegree = 0;
-                for (let i = 0; i < index; i++) {
-                  startDegree += spendingData[i].percentage * 3.6;
-                }
-                return (
-                  <View
-                    key={item.category}
-                    style={[
-                      styles.chartSegment,
-                      {
-                        backgroundColor: item.color,
-                        transform: [
-                          { rotate: `${startDegree}deg` },
-                        ],
-                      },
-                    ]}
-                  />
-                );
-              })}
-              <View style={styles.donutHole} />
+          {loading ? (
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size="large" color={Colors.primary} />
             </View>
-          </View>
+          ) : spendingData.length === 0 ? (
+            <View style={styles.emptyContainer}>
+              <Ionicons name="pie-chart-outline" size={48} color={Colors.textSecondary} />
+              <Text style={styles.emptyText}>No spending data yet</Text>
+            </View>
+          ) : (
+            <>
+              {/* Donut Chart */}
+              <View style={styles.chartContainer}>
+                <View style={styles.donutChart}>
+                  {spendingData.map((item, index) => {
+                    const totalDegrees = spendingData.reduce((sum, d) => sum + (d.percentage * 3.6), 0);
+                    let startDegree = 0;
+                    for (let i = 0; i < index; i++) {
+                      startDegree += spendingData[i].percentage * 3.6;
+                    }
+                    return (
+                      <View
+                        key={item.category}
+                        style={[
+                          styles.chartSegment,
+                          {
+                            backgroundColor: item.color,
+                            transform: [
+                              { rotate: `${startDegree}deg` },
+                            ],
+                          },
+                        ]}
+                      />
+                    );
+                  })}
+                  <View style={styles.donutHole} />
+                </View>
+              </View>
 
-          {/* Legend */}
-          <View style={styles.legend}>
-            <View style={styles.legendColumn}>
-              {spendingData.slice(0, 3).map((item) => (
-                <View key={item.category} style={styles.legendItem}>
-                  <View style={[styles.legendDot, { backgroundColor: item.color }]} />
-                  <Text style={styles.legendLabel}>{item.category}</Text>
-                  <Text style={styles.legendAmount}>${item.amount}</Text>
+              {/* Legend */}
+              <View style={styles.legend}>
+                <View style={styles.legendColumn}>
+                  {spendingData.slice(0, Math.ceil(spendingData.length / 2)).map((item) => (
+                    <View key={item.category} style={styles.legendItem}>
+                      <View style={[styles.legendDot, { backgroundColor: item.color }]} />
+                      <Text style={styles.legendLabel}>{item.category}</Text>
+                      <Text style={styles.legendAmount}>${item.amount.toFixed(2)}</Text>
+                    </View>
+                  ))}
                 </View>
-              ))}
-            </View>
-            <View style={styles.legendColumn}>
-              {spendingData.slice(3).map((item) => (
-                <View key={item.category} style={styles.legendItem}>
-                  <View style={[styles.legendDot, { backgroundColor: item.color }]} />
-                  <Text style={styles.legendLabel}>{item.category}</Text>
-                  <Text style={styles.legendAmount}>${item.amount}</Text>
+                <View style={styles.legendColumn}>
+                  {spendingData.slice(Math.ceil(spendingData.length / 2)).map((item) => (
+                    <View key={item.category} style={styles.legendItem}>
+                      <View style={[styles.legendDot, { backgroundColor: item.color }]} />
+                      <Text style={styles.legendLabel}>{item.category}</Text>
+                      <Text style={styles.legendAmount}>${item.amount.toFixed(2)}</Text>
+                    </View>
+                  ))}
                 </View>
-              ))}
-            </View>
-          </View>
+              </View>
+            </>
+          )}
         </View>
 
         {/* This Week */}
@@ -163,25 +250,42 @@ export default function HomeScreen() {
         {/* Recent Transactions */}
         <View style={styles.card}>
           <Text style={styles.cardTitle}>Recent Transactions</Text>
-          {recentTransactions.map((transaction) => (
-            <View key={transaction.id} style={styles.transactionItem}>
-              <View style={styles.transactionLeft}>
-                <Text style={styles.transactionName}>{transaction.name}</Text>
-                <Text style={styles.transactionTime}>{transaction.time}</Text>
-              </View>
-              <View style={styles.transactionRight}>
-                <Text
-                  style={[
-                    styles.transactionAmount,
-                    transaction.amount > 0 ? styles.incomeAmount : styles.expenseAmount,
-                  ]}
-                >
-                  {transaction.amount > 0 ? '+' : ''}${Math.abs(transaction.amount).toFixed(2)}
-                </Text>
-                <Text style={styles.transactionCategory}>{transaction.category}</Text>
-              </View>
+          {loading ? (
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size="large" color={Colors.primary} />
             </View>
-          ))}
+          ) : recentTransactions.length === 0 ? (
+            <View style={styles.emptyContainer}>
+              <Ionicons name="receipt-outline" size={48} color={Colors.textSecondary} />
+              <Text style={styles.emptyText}>No transactions yet</Text>
+            </View>
+          ) : (
+            recentTransactions.map((transaction) => (
+              <View key={transaction.id} style={styles.transactionItem}>
+                <View style={styles.transactionLeft}>
+                  <Text style={styles.transactionName}>
+                    {transaction.merchant || 'Transaction'}
+                  </Text>
+                  <Text style={styles.transactionTime}>
+                    {getRelativeTime(transaction.occurred_at)}
+                  </Text>
+                </View>
+                <View style={styles.transactionRight}>
+                  <Text
+                    style={[
+                      styles.transactionAmount,
+                      transaction.amount > 0 ? styles.incomeAmount : styles.expenseAmount,
+                    ]}
+                  >
+                    {transaction.amount > 0 ? '+' : ''}${Math.abs(transaction.amount).toFixed(2)}
+                  </Text>
+                  <Text style={styles.transactionCategory}>
+                    {transaction.category?.name || 'Uncategorized'}
+                  </Text>
+                </View>
+              </View>
+            ))
+          )}
         </View>
 
         <View style={{ height: 20 }} />
@@ -439,5 +543,20 @@ const styles = StyleSheet.create({
   transactionCategory: {
     fontSize: 13,
     color: Colors.textSecondary,
+  },
+  loadingContainer: {
+    paddingVertical: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emptyContainer: {
+    paddingVertical: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emptyText: {
+    fontSize: 15,
+    color: Colors.textSecondary,
+    marginTop: 12,
   },
 });

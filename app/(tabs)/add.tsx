@@ -43,7 +43,7 @@ export default function AddScreen() {
           <TouchableOpacity
             style={[
               styles.methodButton,
-              inputMethod === 'manual' && styles.methodButtonInactive,
+              inputMethod === 'manual' && styles.methodButtonActive,
             ]}
             onPress={() => setInputMethod('manual')}
           >
@@ -65,13 +65,21 @@ export default function AddScreen() {
           <TouchableOpacity
             style={[
               styles.methodButton,
-              styles.methodButtonActive,
-              inputMethod === 'receipt' && styles.methodButtonSelected,
+              inputMethod === 'receipt' && styles.methodButtonActive,
             ]}
             onPress={() => setInputMethod('receipt')}
           >
-            <Ionicons name="camera-outline" size={32} color={Colors.white} />
-            <Text style={[styles.methodLabel, styles.methodLabelActive]}>
+            <Ionicons
+              name="camera-outline"
+              size={32}
+              color={inputMethod === 'receipt' ? Colors.white : Colors.textSecondary}
+            />
+            <Text
+              style={[
+                styles.methodLabel,
+                inputMethod === 'receipt' && styles.methodLabelActive,
+              ]}
+            >
               Receipt
             </Text>
           </TouchableOpacity>
@@ -79,7 +87,7 @@ export default function AddScreen() {
           <TouchableOpacity
             style={[
               styles.methodButton,
-              inputMethod === 'voice' && styles.methodButtonInactive,
+              inputMethod === 'voice' && styles.methodButtonActive,
             ]}
             onPress={() => setInputMethod('voice')}
           >
@@ -261,12 +269,6 @@ const styles = StyleSheet.create({
   methodButtonActive: {
     backgroundColor: Colors.textPrimary,
     borderColor: Colors.textPrimary,
-  },
-  methodButtonSelected: {
-    backgroundColor: Colors.textPrimary,
-  },
-  methodButtonInactive: {
-    backgroundColor: Colors.white,
   },
   methodLabel: {
     fontSize: 14,

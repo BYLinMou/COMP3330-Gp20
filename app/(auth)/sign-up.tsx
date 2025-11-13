@@ -5,6 +5,7 @@ import { Link, useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../src/services/supabase';
+import { initializeUserAccount } from '../../src/services/profiles';
 import { Colors } from '../../constants/theme';
 
 export default function SignUp() {
@@ -33,20 +34,39 @@ export default function SignUp() {
     }
 
     setLoading(true);
-    const { error } = await supabase.auth.signUp({
-      email: email.trim(),
-      password,
-    });
-    setLoading(false);
+    
+    try {
+      // Step 1: Sign up the user
+      const { data, error: signUpError } = await supabase.auth.signUp({
+        email: email.trim(),
+        password,
+      });
 
-    if (error) {
-      Alert.alert('Sign Up Error', error.message);
-    } else {
+      if (signUpError) {
+        throw signUpError;
+      }
+
+      // Step 2: Initialize user account (create profile, categories, pet, etc.)
+      if (data.user) {
+        try {
+          await initializeUserAccount();
+          console.log('✅ User account initialized successfully');
+        } catch (initError) {
+          console.error('❌ Error initializing user account:', initError);
+          // Don't fail the signup if initialization fails
+          // User can still use the app, we'll create data on first use
+        }
+      }
+
       Alert.alert(
         'Success!',
         'Account created successfully. Please check your email to verify your account.',
         [{ text: 'OK', onPress: () => router.replace('/(auth)/sign-in') }]
       );
+    } catch (error: any) {
+      Alert.alert('Sign Up Error', error.message || 'An error occurred during sign up');
+    } finally {
+      setLoading(false);
     }
   }
 
