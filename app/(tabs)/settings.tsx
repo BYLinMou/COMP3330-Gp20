@@ -3,8 +3,10 @@ import { View, Text, ScrollView, StyleSheet, TouchableOpacity, TextInput, Switch
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
+import Constants from 'expo-constants';
 import { Colors } from '../../constants/theme';
 import { supabase } from '../../src/services/supabase';
+import { useAuth } from '../../src/providers/AuthProvider';
 import { 
   saveOpenAIConfig, 
   getOpenAIConfig, 
@@ -14,8 +16,9 @@ import {
 } from '../../src/services/openai-config';
 
 export default function SettingsScreen() {
-  const [fullName, setFullName] = useState('Alex Johnson');
-  const [email, setEmail] = useState('alex.johnson@email.com');
+  const { session } = useAuth();
+  const [fullName, setFullName] = useState('');
+  const [email, setEmail] = useState('');
   const [currency, setCurrency] = useState('USD ($)');
   const [language, setLanguage] = useState('English');
   const [monthlyBudget, setMonthlyBudget] = useState('2000');
@@ -32,10 +35,12 @@ export default function SettingsScreen() {
   // OpenAI Configuration States
   const [openaiUrl, setOpenaiUrl] = useState('https://api.openai.com/v1');
   const [openaiKey, setOpenaiKey] = useState('');
+  const [showApiKey, setShowApiKey] = useState(false);
   const [availableModels, setAvailableModels] = useState<OpenAIModel[]>([]);
   const [primaryModel, setPrimaryModel] = useState('');
   const [fallbackModel, setFallbackModel] = useState('');
   const [loadingModels, setLoadingModels] = useState(false);
+  const [showModelSelection, setShowModelSelection] = useState(false);
   const [showPrimaryModelModal, setShowPrimaryModelModal] = useState(false);
   const [showFallbackModelModal, setShowFallbackModelModal] = useState(false);
 
@@ -45,6 +50,18 @@ export default function SettingsScreen() {
   useEffect(() => {
     loadOpenAIConfig();
   }, []);
+
+  useEffect(() => {
+    // Load user's actual login email from session
+    if (session?.user?.email) {
+      setEmail(session.user.email);
+      // Also set full name from user metadata if available
+      const displayName = session.user.user_metadata?.full_name || '';
+      if (displayName) {
+        setFullName(displayName);
+      }
+    }
+  }, [session]);
 
   const loadOpenAIConfig = async () => {
     try {
@@ -152,7 +169,9 @@ export default function SettingsScreen() {
               placeholder="Enter your email"
               keyboardType="email-address"
               autoCapitalize="none"
+              editable={false}
             />
+            <Text style={styles.helperText}>Your login email cannot be changed here. Contact support to update your email.</Text>
           </View>
 
           <View style={styles.row}>
@@ -272,78 +291,129 @@ export default function SettingsScreen() {
 
           <View style={styles.inputGroup}>
             <Text style={styles.inputLabel}>API Key</Text>
-            <TextInput
-              style={styles.textInput}
-              value={openaiKey}
-              onChangeText={setOpenaiKey}
-              placeholder="sk-..."
-              secureTextEntry
-              autoCapitalize="none"
-            />
+            <View style={styles.keyInputContainer}>
+              <TextInput
+                style={styles.keyInput}
+                value={openaiKey}
+                onChangeText={setOpenaiKey}
+                placeholder="sk-..."
+                secureTextEntry={!showApiKey}
+                autoCapitalize="none"
+              />
+              <TouchableOpacity 
+                style={styles.keyVisibilityButton}
+                onPress={() => setShowApiKey(!showApiKey)}
+              >
+                <Ionicons 
+                  name={showApiKey ? "eye-outline" : "eye-off-outline"} 
+                  size={20} 
+                  color={Colors.textSecondary} 
+                />
+              </TouchableOpacity>
+            </View>
           </View>
 
-          <TouchableOpacity 
-            style={[styles.fetchModelsButton, loadingModels && styles.fetchModelsButtonDisabled]}
-            onPress={handleFetchModels}
-            disabled={loadingModels}
-          >
-            {loadingModels ? (
-              <ActivityIndicator color={Colors.white} />
-            ) : (
-              <>
-                <Ionicons name="refresh-outline" size={20} color={Colors.white} />
-                <Text style={styles.fetchModelsButtonText}>Fetch Available Models</Text>
-              </>
+          {/* Model Selection Collapsible Section */}
+          <View style={styles.collapsibleSection}>
+            <TouchableOpacity 
+              style={styles.collapsibleHeader}
+              onPress={() => setShowModelSelection(!showModelSelection)}
+            >
+              <View style={styles.collapsibleHeaderLeft}>
+                <Ionicons 
+                  name={showModelSelection ? "chevron-down" : "chevron-forward"} 
+                  size={20} 
+                  color={Colors.primary} 
+                />
+                <Text style={styles.collapsibleHeaderTitle}>AI Model Selection</Text>
+              </View>
+              {(primaryModel || fallbackModel) && (
+                <View style={styles.modelIndicator}>
+                  <Text style={styles.modelIndicatorText}>
+                    {primaryModel ? '1' : ''}{fallbackModel ? '+1' : ''}
+                  </Text>
+                </View>
+              )}
+            </TouchableOpacity>
+
+            {showModelSelection && (
+              <View style={styles.collapsibleContent}>
+                {/* Fetch Models Button */}
+                <TouchableOpacity 
+                  style={[styles.fetchModelsButton, loadingModels && styles.fetchModelsButtonDisabled]}
+                  onPress={handleFetchModels}
+                  disabled={loadingModels}
+                >
+                  {loadingModels ? (
+                    <ActivityIndicator color={Colors.white} />
+                  ) : (
+                    <>
+                      <Ionicons name="refresh-outline" size={20} color={Colors.white} />
+                      <Text style={styles.fetchModelsButtonText}>Fetch Available Models</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+
+                {/* Model Selection UI - Always show if we have models or previously selected models */}
+                {(availableModels.length > 0 || primaryModel || fallbackModel) && (
+                  <>
+                    <View style={styles.inputGroup}>
+                      <Text style={styles.inputLabel}>
+                        Primary Model <Text style={styles.required}>*</Text>
+                      </Text>
+                      <TouchableOpacity 
+                        style={styles.selectInput}
+                        onPress={() => availableModels.length > 0 && setShowPrimaryModelModal(true)}
+                        disabled={availableModels.length === 0}
+                      >
+                        <Text style={primaryModel ? styles.selectText : styles.selectPlaceholder}>
+                          {primaryModel || (availableModels.length === 0 ? 'Fetch models first' : 'Select primary model')}
+                        </Text>
+                        <Ionicons name="chevron-down" size={20} color={Colors.textSecondary} />
+                      </TouchableOpacity>
+                      {primaryModel && availableModels.length === 0 && (
+                        <Text style={styles.helperText}>Currently selected: {primaryModel}</Text>
+                      )}
+                    </View>
+
+                    <View style={styles.inputGroup}>
+                      <Text style={styles.inputLabel}>Fallback Model (Optional)</Text>
+                      <TouchableOpacity 
+                        style={styles.selectInput}
+                        onPress={() => availableModels.length > 0 && setShowFallbackModelModal(true)}
+                        disabled={availableModels.length === 0}
+                      >
+                        <Text style={fallbackModel ? styles.selectText : styles.selectPlaceholder}>
+                          {fallbackModel || (availableModels.length === 0 ? 'Fetch models first' : 'Select fallback model')}
+                        </Text>
+                        <Ionicons name="chevron-down" size={20} color={Colors.textSecondary} />
+                      </TouchableOpacity>
+                      {fallbackModel && availableModels.length === 0 && (
+                        <Text style={styles.helperText}>Currently selected: {fallbackModel}</Text>
+                      )}
+                    </View>
+                  </>
+                )}
+
+                {availableModels.length === 0 && !primaryModel && !fallbackModel && !loadingModels && (
+                  <View style={styles.infoBox}>
+                    <Ionicons name="information-circle-outline" size={20} color={Colors.primary} />
+                    <Text style={styles.infoText}>
+                      Enter your OpenAI credentials and fetch models to configure AI features.
+                    </Text>
+                  </View>
+                )}
+              </View>
             )}
+          </View>
+
+          {/* Save OpenAI Configuration Button - Outside collapsible section */}
+          <TouchableOpacity 
+            style={[styles.saveButton, styles.saveOpenaiButton]}
+            onPress={handleSaveOpenAIConfig}
+          >
+            <Text style={styles.saveButtonText}>Save OpenAI Configuration</Text>
           </TouchableOpacity>
-
-          {availableModels.length > 0 && (
-            <>
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>
-                  Primary Model <Text style={styles.required}>*</Text>
-                </Text>
-                <TouchableOpacity 
-                  style={styles.selectInput}
-                  onPress={() => setShowPrimaryModelModal(true)}
-                >
-                  <Text style={primaryModel ? styles.selectText : styles.selectPlaceholder}>
-                    {primaryModel || 'Select primary model'}
-                  </Text>
-                  <Ionicons name="chevron-down" size={20} color={Colors.textSecondary} />
-                </TouchableOpacity>
-              </View>
-
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Fallback Model (Optional)</Text>
-                <TouchableOpacity 
-                  style={styles.selectInput}
-                  onPress={() => setShowFallbackModelModal(true)}
-                >
-                  <Text style={fallbackModel ? styles.selectText : styles.selectPlaceholder}>
-                    {fallbackModel || 'Select fallback model'}
-                  </Text>
-                  <Ionicons name="chevron-down" size={20} color={Colors.textSecondary} />
-                </TouchableOpacity>
-              </View>
-
-              <TouchableOpacity 
-                style={styles.saveButton}
-                onPress={handleSaveOpenAIConfig}
-              >
-                <Text style={styles.saveButtonText}>Save OpenAI Configuration</Text>
-              </TouchableOpacity>
-            </>
-          )}
-
-          {availableModels.length === 0 && !loadingModels && (
-            <View style={styles.infoBox}>
-              <Ionicons name="information-circle-outline" size={20} color={Colors.primary} />
-              <Text style={styles.infoText}>
-                Enter your OpenAI credentials and fetch models to configure AI features.
-              </Text>
-            </View>
-          )}
         </View>
 
         {/* Custom Categories */}
@@ -479,7 +549,9 @@ export default function SettingsScreen() {
           <Text style={styles.signOutText}>Sign Out</Text>
         </TouchableOpacity>
 
-        <Text style={styles.version}>AuraSpend v2.1.0</Text>
+        <Text style={styles.version}>
+          AuraSpend v{Constants.expoConfig?.version || '0.0.0'}
+        </Text>
 
         <View style={{ height: 20 }} />
       </ScrollView>
@@ -671,6 +743,12 @@ const styles = StyleSheet.create({
     color: Colors.textPrimary,
     marginBottom: 8,
   },
+  helperText: {
+    fontSize: 12,
+    color: Colors.textSecondary,
+    marginTop: 6,
+    fontStyle: 'italic',
+  },
   textInput: {
     backgroundColor: Colors.gray100,
     borderRadius: 8,
@@ -724,6 +802,10 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     alignItems: 'center',
     marginTop: 4,
+  },
+  saveOpenaiButton: {
+    marginTop: 16,
+    marginBottom: 0,
   },
   saveButtonText: {
     fontSize: 16,
@@ -944,5 +1026,93 @@ const styles = StyleSheet.create({
   modalItemSubtext: {
     fontSize: 13,
     color: Colors.textSecondary,
+  },
+  // API Key Input Styles
+  keyInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.gray100,
+    borderRadius: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  keyInput: {
+    flex: 1,
+    fontSize: 15,
+    color: Colors.textPrimary,
+  },
+  keyVisibilityButton: {
+    padding: 8,
+    marginLeft: 8,
+  },
+  // Collapsible Section Styles
+  collapsibleSection: {
+    marginTop: 12,
+    backgroundColor: Colors.gray50,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.gray200,
+    overflow: 'hidden',
+  },
+  collapsibleHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 16,
+    paddingHorizontal: 16,
+    backgroundColor: Colors.white,
+  },
+  collapsibleHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    flex: 1,
+  },
+  collapsibleHeaderTitle: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: Colors.textPrimary,
+  },
+  modelIndicator: {
+    backgroundColor: Colors.primary,
+    borderRadius: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  modelIndicatorText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: Colors.white,
+  },
+  collapsibleContent: {
+    backgroundColor: Colors.gray50,
+    paddingVertical: 16,
+    paddingHorizontal: 16,
+    borderTopWidth: 1,
+    borderTopColor: Colors.gray200,
+  },
+  // Model Summary Styles
+  modelSummary: {
+    marginTop: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    backgroundColor: Colors.gray50,
+    borderRadius: 8,
+    gap: 8,
+  },
+  modelSummaryItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  modelSummaryLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: Colors.textSecondary,
+  },
+  modelSummaryValue: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: Colors.primary,
   },
 });

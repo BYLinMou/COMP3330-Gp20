@@ -11,11 +11,13 @@ export default ({ config }) => {
     console.warn('Please create a .env file with EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY');
   }
 
+  const appVersion = "0.0.3";
+
   return {
     expo: {
       name: "AuraSpend",
       slug: "AuraSpend",
-      version: "0.0.2",
+      version: appVersion,
       orientation: "portrait",
       icon: "./assets/images/icon.png",
       scheme: "auraspend",

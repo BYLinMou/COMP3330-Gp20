@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Alert, StyleSheet, Text, TextInput, TouchableOpacity, View, ActivityIndicator, ScrollView } from 'react-native';
+import { Alert, StyleSheet, Text, TextInput, TouchableOpacity, View, ActivityIndicator, ScrollView, KeyboardAvoidingView, Platform, TouchableWithoutFeedback, Keyboard } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Link, useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -49,12 +49,20 @@ export default function SignUp() {
       // Step 2: Initialize user account (create profile, categories, pet, etc.)
       if (data.user) {
         try {
-          await initializeUserAccount();
+          // Pass the user ID to ensure it's used even if session isn't fully initialized
+          await initializeUserAccount(data.user.id);
           console.log('✅ User account initialized successfully');
         } catch (initError) {
           console.error('❌ Error initializing user account:', initError);
-          // Don't fail the signup if initialization fails
-          // User can still use the app, we'll create data on first use
+          // Note: Account can still be used, but some features might not work
+          // The addTransaction function will create the profile on first use if needed
+          Alert.alert(
+            'Partial Setup',
+            'Your account was created but some initial data failed to load. This will be set up automatically on first use.',
+            [{ text: 'Continue to Sign In', onPress: () => router.replace('/(auth)/sign-in') }]
+          );
+          setLoading(false);
+          return;
         }
       }
 
@@ -72,22 +80,32 @@ export default function SignUp() {
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* Header */}
-      <LinearGradient
-        colors={[Colors.gradientStart, Colors.gradientEnd]}
-        style={styles.header}
+      <KeyboardAvoidingView 
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        style={styles.keyboardView}
       >
-        <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-          <Ionicons name="arrow-back" size={24} color={Colors.white} />
-        </TouchableOpacity>
-        <View style={styles.logoContainer}>
-          <Text style={styles.logoEmoji}>🐾</Text>
-        </View>
-        <Text style={styles.appName}>Create Account</Text>
-        <Text style={styles.subtitle}>Join AuraPet today</Text>
-      </LinearGradient>
+        {/* Header */}
+        <LinearGradient
+          colors={[Colors.gradientStart, Colors.gradientEnd]}
+          style={styles.header}
+        >
+          <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+            <Ionicons name="arrow-back" size={24} color={Colors.white} />
+          </TouchableOpacity>
+          <View style={styles.logoContainer}>
+            <Text style={styles.logoEmoji}>🐾</Text>
+          </View>
+          <Text style={styles.appName}>Create Account</Text>
+          <Text style={styles.subtitle}>Join AuraPet today</Text>
+        </LinearGradient>
 
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+        <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+          <ScrollView 
+            style={styles.content} 
+            contentContainerStyle={styles.scrollContent}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+          >
         <Text style={styles.welcomeText}>Get Started</Text>
         <Text style={styles.descriptionText}>Create your account to start managing your finances</Text>
 
@@ -183,7 +201,9 @@ export default function SignUp() {
         </View>
 
         <View style={{ height: 40 }} />
-      </ScrollView>
+          </ScrollView>
+        </TouchableWithoutFeedback>
+      </KeyboardAvoidingView>
     </SafeAreaView>
   );
 }
@@ -192,6 +212,9 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: Colors.background,
+  },
+  keyboardView: {
+    flex: 1,
   },
   header: {
     paddingVertical: 40,
@@ -231,6 +254,9 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
     padding: 24,
+  },
+  scrollContent: {
+    paddingBottom: 40,
   },
   welcomeText: {
     fontSize: 28,
