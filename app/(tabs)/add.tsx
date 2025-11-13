@@ -1,20 +1,36 @@
-import React, { useState } from 'react';
-import { View, Text, ScrollView, StyleSheet, TouchableOpacity, TextInput } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, ScrollView, StyleSheet, TouchableOpacity, TextInput, Alert, ActivityIndicator, Modal, Platform } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
+import DateTimePicker from '@react-native-community/datetimepicker';
+import * as ImagePicker from 'expo-image-picker';
 import { Colors } from '../../constants/theme';
+import { addTransaction, getCategories, type Category } from '../../src/services/transactions';
+import { useAuth } from '../../src/providers/AuthProvider';
 
 type InputMethod = 'manual' | 'receipt' | 'voice';
 
 export default function AddScreen() {
+  const { session } = useAuth();
   const [inputMethod, setInputMethod] = useState<InputMethod>('receipt');
   const [amount, setAmount] = useState('');
   const [description, setDescription] = useState('');
-  const [category, setCategory] = useState('');
+  const [categoryId, setCategoryId] = useState('');
   const [merchant, setMerchant] = useState('');
-  const [date, setDate] = useState('09/30/2025');
+  const [selectedDate, setSelectedDate] = useState(new Date());
   const [notes, setNotes] = useState('');
+  
+  // Categories and loading states
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [loadingCategories, setLoadingCategories] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  
+  // Modal states
+  const [showCategoryModal, setShowCategoryModal] = useState(false);
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  
+
 
   const quickAddItems = [
     { label: '$4.5 Coffee', amount: 4.5 },
@@ -22,6 +38,163 @@ export default function AddScreen() {
     { label: '$35 Gas', amount: 35 },
     { label: '$45 Groceries', amount: 45 },
   ];
+
+  // Load categories on mount
+  useEffect(() => {
+    loadCategories();
+  }, []);
+
+  const loadCategories = async () => {
+    try {
+      setLoadingCategories(true);
+      const data = await getCategories();
+      setCategories(data);
+      if (data.length > 0) {
+        setCategoryId(data[0].id);
+      }
+    } catch (error) {
+      console.error('Failed to load categories:', error);
+    } finally {
+      setLoadingCategories(false);
+    }
+  };
+
+  const handleDateChange = (event: any, selectedDate?: Date) => {
+    setShowDatePicker(Platform.OS === 'ios');
+    if (selectedDate) {
+      setSelectedDate(selectedDate);
+    }
+  };
+
+  const handleImagePick = async () => {
+    try {
+      const permissionResult = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      
+      if (permissionResult.granted === false) {
+        Alert.alert('Permission Required', 'Please allow access to your photos to upload receipts.');
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        quality: 1,
+      });
+
+      if (!result.canceled) {
+        Alert.alert('Photo Selected', 'Receipt photo selected. OCR feature coming soon!');
+        // TODO: Implement OCR processing here
+      }
+    } catch (error) {
+      console.error('Error picking image:', error);
+      Alert.alert('Error', 'Failed to select image.');
+    }
+  };
+
+  const handleCameraPick = async () => {
+    try {
+      const permissionResult = await ImagePicker.requestCameraPermissionsAsync();
+      
+      if (permissionResult.granted === false) {
+        Alert.alert('Permission Required', 'Please allow camera access to take receipt photos.');
+        return;
+      }
+
+      const result = await ImagePicker.launchCameraAsync({
+        allowsEditing: true,
+        quality: 1,
+      });
+
+      if (!result.canceled) {
+        Alert.alert('Photo Captured', 'Receipt photo captured. OCR feature coming soon!');
+        // TODO: Implement OCR processing here
+      }
+    } catch (error) {
+      console.error('Error taking photo:', error);
+      Alert.alert('Error', 'Failed to take photo.');
+    }
+  };
+
+  const handleSaveTransaction = async () => {
+    // Check authentication first
+    if (!session) {
+      Alert.alert('Authentication Required', 'Please sign in to save transactions');
+      return;
+    }
+
+    // Validation
+    if (!amount || isNaN(parseFloat(amount))) {
+      Alert.alert('Validation Error', 'Please enter a valid amount');
+      return;
+    }
+
+    if (!description.trim()) {
+      Alert.alert('Validation Error', 'Please enter a description');
+      return;
+    }
+
+    try {
+      setSubmitting(true);
+
+      // Convert amount to negative for expenses
+      const numericAmount = -Math.abs(parseFloat(amount));
+
+      const transactionData = {
+        amount: numericAmount,
+        occurred_at: selectedDate.toISOString(),
+        merchant: merchant.trim() || description.trim(), // Use merchant or description as fallback
+        category_id: categoryId || null,
+        source: inputMethod === 'manual' ? 'manual' : inputMethod === 'receipt' ? 'ocr' : 'ai',
+        note: description.trim() + (notes.trim() ? ' | ' + notes.trim() : ''), // Combine description and notes
+      };
+
+      console.log('Saving transaction:', transactionData);
+      const result = await addTransaction(transactionData);
+      console.log('Transaction saved successfully:', result);
+
+      Alert.alert('Success', 'Transaction saved successfully!', [
+        {
+          text: 'OK',
+          onPress: () => {
+            // Reset form
+            setAmount('');
+            setDescription('');
+            setMerchant('');
+            setNotes('');
+            setSelectedDate(new Date());
+          },
+        },
+      ]);
+    } catch (error: any) {
+      console.error('Failed to save transaction:', error);
+      const errorMessage = error?.message || 'Failed to save transaction. Please try again.';
+      Alert.alert('Error', errorMessage);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleQuickAdd = async (item: { label: string; amount: number }) => {
+    try {
+      setSubmitting(true);
+
+      await addTransaction({
+        amount: -item.amount, // Negative for expense
+        occurred_at: new Date().toISOString(),
+        merchant: item.label,
+        category_id: categoryId || null,
+        source: 'manual',
+        note: 'Quick Add: ' + item.label,
+      });
+
+      Alert.alert('Success', `${item.label} added successfully!`);
+    } catch (error) {
+      console.error('Failed to add quick transaction:', error);
+      Alert.alert('Error', 'Failed to add transaction. Please try again.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -35,6 +208,20 @@ export default function AddScreen() {
       </LinearGradient>
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+        {/* Debug Info - Remove in production */}
+        {__DEV__ && (
+          <View style={styles.debugInfo}>
+            <Text style={styles.debugText}>
+              Auth Status: {session ? '✅ Logged In' : '❌ Not Logged In'}
+            </Text>
+            {session && (
+              <Text style={styles.debugText}>
+                User: {session.user?.email}
+              </Text>
+            )}
+          </View>
+        )}
+
         {/* Add Transaction Title */}
         <Text style={styles.pageTitle}>Add Transaction</Text>
 
@@ -114,9 +301,16 @@ export default function AddScreen() {
               <Ionicons name="cloud-upload-outline" size={48} color={Colors.primary} />
             </View>
             <Text style={styles.uploadText}>Upload a receipt or take a photo</Text>
-            <TouchableOpacity style={styles.uploadButton}>
-              <Text style={styles.uploadButtonText}>Choose File</Text>
-            </TouchableOpacity>
+            <View style={styles.uploadButtonRow}>
+              <TouchableOpacity style={styles.uploadButton} onPress={handleImagePick}>
+                <Ionicons name="images-outline" size={20} color={Colors.textPrimary} />
+                <Text style={styles.uploadButtonText}>Choose File</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.uploadButton} onPress={handleCameraPick}>
+                <Ionicons name="camera-outline" size={20} color={Colors.textPrimary} />
+                <Text style={styles.uploadButtonText}>Take Photo</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         )}
 
@@ -158,28 +352,78 @@ export default function AddScreen() {
           {/* Category */}
           <View style={styles.inputGroup}>
             <Text style={styles.inputLabel}>Category</Text>
-            <TouchableOpacity style={styles.selectInput}>
-              <Text style={styles.selectPlaceholder}>Select category</Text>
+            <TouchableOpacity 
+              style={styles.selectInput}
+              onPress={() => setShowCategoryModal(true)}
+              disabled={loadingCategories}
+            >
+              <Text style={categoryId ? styles.selectValue : styles.selectPlaceholder}>
+                {categoryId 
+                  ? categories.find(c => c.id === categoryId)?.name || 'Select category'
+                  : 'Select category'}
+              </Text>
               <Ionicons name="chevron-down" size={20} color={Colors.textSecondary} />
             </TouchableOpacity>
           </View>
 
           {/* Merchant */}
           <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>Merchant</Text>
-            <TouchableOpacity style={styles.selectInput}>
-              <Text style={styles.selectPlaceholder}>Select merchant</Text>
-              <Ionicons name="chevron-down" size={20} color={Colors.textSecondary} />
-            </TouchableOpacity>
+            <Text style={styles.inputLabel}>Merchant (Optional)</Text>
+            <TextInput
+              style={styles.textInput}
+              placeholder="Enter merchant name (or use description)"
+              value={merchant}
+              onChangeText={setMerchant}
+            />
           </View>
 
-          {/* Date */}
+          {/* Date (occurred_at) */}
           <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>Date</Text>
-            <View style={styles.dateInput}>
-              <Ionicons name="calendar-outline" size={20} color={Colors.textSecondary} />
-              <Text style={styles.dateText}>{date}</Text>
-            </View>
+            <Text style={styles.inputLabel}>Date (Occurred At)</Text>
+            {Platform.OS === 'web' ? (
+              <input
+                type="date"
+                value={selectedDate.toISOString().split('T')[0]}
+                onChange={(e) => setSelectedDate(new Date(e.target.value))}
+                max={new Date().toISOString().split('T')[0]}
+                style={{
+                  backgroundColor: Colors.gray100,
+                  borderRadius: 8,
+                  padding: 14,
+                  fontSize: 15,
+                  color: Colors.textPrimary,
+                  border: 'none',
+                  fontFamily: 'system-ui',
+                }}
+              />
+            ) : (
+              <>
+                <TouchableOpacity 
+                  style={styles.dateInputContainer}
+                  onPress={() => setShowDatePicker(true)}
+                >
+                  <View style={styles.dateTextInput}>
+                    <Ionicons name="calendar-outline" size={20} color={Colors.textSecondary} style={{ marginRight: 8 }} />
+                    <Text style={styles.dateValueText}>
+                      {selectedDate.toLocaleDateString('en-US', { 
+                        month: '2-digit', 
+                        day: '2-digit', 
+                        year: 'numeric' 
+                      })}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+                {showDatePicker && (
+                  <DateTimePicker
+                    value={selectedDate}
+                    mode="date"
+                    display="default"
+                    onChange={handleDateChange}
+                    maximumDate={new Date()}
+                  />
+                )}
+              </>
+            )}
           </View>
 
           {/* Notes */}
@@ -196,9 +440,20 @@ export default function AddScreen() {
           </View>
 
           {/* Save Button */}
-          <TouchableOpacity style={styles.saveButton}>
-            <Text style={styles.saveButtonText}>Save Transaction</Text>
+          <TouchableOpacity 
+            style={[styles.saveButton, submitting && styles.saveButtonDisabled]} 
+            onPress={handleSaveTransaction}
+            disabled={submitting || !session}
+          >
+            {submitting ? (
+              <ActivityIndicator color={Colors.white} />
+            ) : (
+              <Text style={styles.saveButtonText}>Save Transaction</Text>
+            )}
           </TouchableOpacity>
+          {!session && (
+            <Text style={styles.warningText}>Please sign in to save transactions</Text>
+          )}
         </View>
 
         {/* Quick Add */}
@@ -206,7 +461,12 @@ export default function AddScreen() {
           <Text style={styles.sectionTitle}>Quick Add</Text>
           <View style={styles.quickAddGrid}>
             {quickAddItems.map((item, index) => (
-              <TouchableOpacity key={index} style={styles.quickAddButton}>
+              <TouchableOpacity 
+                key={index} 
+                style={styles.quickAddButton}
+                onPress={() => handleQuickAdd(item)}
+                disabled={submitting || !session}
+              >
                 <Text style={styles.quickAddText}>{item.label}</Text>
               </TouchableOpacity>
             ))}
@@ -215,6 +475,59 @@ export default function AddScreen() {
 
         <View style={{ height: 20 }} />
       </ScrollView>
+
+      {/* Category Selection Modal */}
+      <Modal
+        visible={showCategoryModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowCategoryModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Select Category</Text>
+              <TouchableOpacity onPress={() => setShowCategoryModal(false)}>
+                <Ionicons name="close" size={24} color={Colors.textPrimary} />
+              </TouchableOpacity>
+            </View>
+            
+            <ScrollView style={styles.modalList}>
+              {loadingCategories ? (
+                <ActivityIndicator style={styles.modalLoading} />
+              ) : categories.length === 0 ? (
+                <Text style={styles.emptyText}>No categories available. Create one first!</Text>
+              ) : (
+                categories.map((category) => (
+                  <TouchableOpacity
+                    key={category.id}
+                    style={[
+                      styles.modalItem,
+                      categoryId === category.id && styles.modalItemSelected
+                    ]}
+                    onPress={() => {
+                      setCategoryId(category.id);
+                      setShowCategoryModal(false);
+                    }}
+                  >
+                    <Text style={[
+                      styles.modalItemText,
+                      categoryId === category.id && styles.modalItemTextSelected
+                    ]}>
+                      {category.name}
+                    </Text>
+                    {categoryId === category.id && (
+                      <Ionicons name="checkmark" size={20} color={Colors.primary} />
+                    )}
+                  </TouchableOpacity>
+                ))
+              )}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+
     </SafeAreaView>
   );
 }
@@ -297,11 +610,20 @@ const styles = StyleSheet.create({
     marginBottom: 20,
     textAlign: 'center',
   },
+  uploadButtonRow: {
+    flexDirection: 'row',
+    gap: 12,
+  },
   uploadButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
     backgroundColor: Colors.white,
     borderWidth: 1,
     borderColor: Colors.textPrimary,
-    paddingHorizontal: 24,
+    paddingHorizontal: 16,
     paddingVertical: 10,
     borderRadius: 8,
   },
@@ -383,16 +705,25 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: Colors.textSecondary,
   },
-  dateInput: {
+  selectValue: {
+    fontSize: 15,
+    color: Colors.textPrimary,
+    fontWeight: '500',
+  },
+  dateInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  dateTextInput: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: Colors.gray100,
     borderRadius: 8,
     paddingHorizontal: 16,
     paddingVertical: 14,
-    gap: 12,
   },
-  dateText: {
+  dateValueText: {
     fontSize: 15,
     color: Colors.textPrimary,
   },
@@ -407,6 +738,15 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
     color: Colors.white,
+  },
+  saveButtonDisabled: {
+    backgroundColor: Colors.gray300,
+  },
+  warningText: {
+    fontSize: 12,
+    color: Colors.error,
+    textAlign: 'center',
+    marginTop: 8,
   },
   quickAddGrid: {
     flexDirection: 'row',
@@ -426,5 +766,112 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     color: Colors.textPrimary,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'flex-end',
+  },
+  modalContent: {
+    backgroundColor: Colors.white,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    maxHeight: '70%',
+    paddingBottom: 20,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    padding: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.gray200,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: Colors.textPrimary,
+  },
+  modalList: {
+    maxHeight: 400,
+  },
+  modalItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.gray100,
+  },
+  modalItemSelected: {
+    backgroundColor: Colors.gray50,
+  },
+  modalItemText: {
+    fontSize: 16,
+    color: Colors.textPrimary,
+  },
+  modalItemTextSelected: {
+    fontWeight: '600',
+    color: Colors.primary,
+  },
+  modalLoading: {
+    paddingVertical: 40,
+  },
+  emptyText: {
+    fontSize: 15,
+    color: Colors.textSecondary,
+    textAlign: 'center',
+    paddingVertical: 40,
+    paddingHorizontal: 20,
+  },
+  customInputContainer: {
+    flexDirection: 'row',
+    gap: 12,
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.gray200,
+  },
+  customInput: {
+    flex: 1,
+    backgroundColor: Colors.gray100,
+    borderRadius: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    fontSize: 15,
+    color: Colors.textPrimary,
+  },
+  customInputButton: {
+    backgroundColor: Colors.primary,
+    borderRadius: 8,
+    paddingHorizontal: 20,
+    justifyContent: 'center',
+  },
+  customInputButtonText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: Colors.white,
+  },
+  commonMerchantsLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: Colors.textSecondary,
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    paddingBottom: 8,
+  },
+  debugInfo: {
+    backgroundColor: Colors.gray100,
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 16,
+    borderLeftWidth: 4,
+    borderLeftColor: Colors.primary,
+  },
+  debugText: {
+    fontSize: 12,
+    color: Colors.textSecondary,
+    fontFamily: 'monospace',
   },
 });
