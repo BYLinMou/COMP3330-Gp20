@@ -32,6 +32,7 @@ export default function AddScreen() {
   // Modal states
   const [showCategoryModal, setShowCategoryModal] = useState(false);
   const [showDatePicker, setShowDatePicker] = useState(false);
+  const [showTimePicker, setShowTimePicker] = useState(false);
   const [showNewCategoryModal, setShowNewCategoryModal] = useState(false);
   const [suggestedCategory, setSuggestedCategory] = useState<string>('');
   const [pendingReceiptData, setPendingReceiptData] = useState<ReceiptData | null>(null);
@@ -100,10 +101,64 @@ export default function AddScreen() {
     }
   };
 
-  const handleDateChange = (event: any, selectedDate?: Date) => {
-    setShowDatePicker(Platform.OS === 'ios');
-    if (selectedDate) {
-      setSelectedDate(selectedDate);
+  const handleDateChange = (event: any, date?: Date) => {
+    console.log('[DatePicker] Event:', event);
+    console.log('[DatePicker] Selected Date:', date);
+    
+    try {
+      if (Platform.OS === 'android') {
+        setShowDatePicker(false);
+        
+        if (event.type === 'dismissed') {
+          console.log('[DatePicker] User cancelled');
+          return;
+        }
+        
+        if (date && !isNaN(date.getTime())) {
+          // On Android: first select date, then show time picker
+          setSelectedDate(date);
+          console.log('[DatePicker] Date selected, now showing time picker');
+          // Show time picker after a short delay
+          setTimeout(() => setShowTimePicker(true), 100);
+        }
+      } else {
+        // iOS: datetime mode works fine
+        if (date && !isNaN(date.getTime())) {
+          setSelectedDate(date);
+        }
+      }
+    } catch (e) {
+      console.error('[DatePicker] Error:', e);
+      setShowDatePicker(false);
+    }
+  };
+
+  const handleTimeChange = (event: any, time?: Date) => {
+    console.log('[TimePicker] Event:', event);
+    console.log('[TimePicker] Selected Time:', time);
+    
+    try {
+      setShowTimePicker(false);
+      
+      if (event.type === 'dismissed') {
+        console.log('[TimePicker] User cancelled');
+        return;
+      }
+      
+      if (time && !isNaN(time.getTime())) {
+        // Combine the selected date with the selected time
+        const newDateTime = new Date(selectedDate);
+        newDateTime.setHours(time.getHours());
+        newDateTime.setMinutes(time.getMinutes());
+        newDateTime.setSeconds(0);
+        newDateTime.setMilliseconds(0);
+        
+        console.log('[TimePicker] Final datetime:', newDateTime);
+        setSelectedDate(newDateTime);
+      }
+    } catch (e) {
+      console.error('[TimePicker] Error:', e);
+      setShowTimePicker(false);
     }
   };
 
@@ -177,6 +232,7 @@ export default function AddScreen() {
       setDescription(receiptData.items?.join(', ') || receiptData.description || '');
       
       if (receiptData.date) {
+        // Parse the datetime string (YYYY-MM-DDTHH:MM format) into Date object
         setSelectedDate(new Date(receiptData.date));
       }
 
@@ -565,15 +621,31 @@ export default function AddScreen() {
             />
           </View>
 
-          {/* Date (occurred_at) */}
+          {/* Date & Time (occurred_at) */}
           <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>Date (Occurred At)</Text>
+            <Text style={styles.inputLabel}>Date & Time (Occurred At)</Text>
             {Platform.OS === 'web' ? (
               <input
-                type="date"
-                value={selectedDate.toISOString().split('T')[0]}
-                onChange={(e) => setSelectedDate(new Date(e.target.value))}
-                max={new Date().toISOString().split('T')[0]}
+                type="datetime-local"
+                value={(() => {
+                  try {
+                    return selectedDate.toISOString().slice(0, 16);
+                  } catch (e) {
+                    console.error('Date formatting error:', e);
+                    return new Date().toISOString().slice(0, 16);
+                  }
+                })()}
+                onChange={(e) => {
+                  try {
+                    const newDate = new Date(e.target.value);
+                    if (!isNaN(newDate.getTime())) {
+                      setSelectedDate(newDate);
+                    }
+                  } catch (e) {
+                    console.error('Date parsing error:', e);
+                  }
+                }}
+                max={new Date().toISOString().slice(0, 16)}
                 style={{
                   backgroundColor: Colors.gray100,
                   borderRadius: 8,
@@ -593,21 +665,39 @@ export default function AddScreen() {
                   <View style={styles.dateTextInput}>
                     <Ionicons name="calendar-outline" size={20} color={Colors.textSecondary} style={{ marginRight: 8 }} />
                     <Text style={styles.dateValueText}>
-                      {selectedDate.toLocaleDateString('en-US', { 
-                        month: '2-digit', 
-                        day: '2-digit', 
-                        year: 'numeric' 
-                      })}
+                      {(() => {
+                        try {
+                          return selectedDate.toLocaleString('en-US', { 
+                            month: '2-digit', 
+                            day: '2-digit', 
+                            year: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                            hour12: false
+                          });
+                        } catch (e) {
+                          console.error('Date formatting error:', e);
+                          return 'Invalid date';
+                        }
+                      })()}
                     </Text>
                   </View>
                 </TouchableOpacity>
                 {showDatePicker && (
                   <DateTimePicker
-                    value={selectedDate}
-                    mode="date"
+                    value={selectedDate instanceof Date && !isNaN(selectedDate.getTime()) ? selectedDate : new Date()}
+                    mode={Platform.OS === 'android' ? 'date' : 'datetime'}
                     display="default"
                     onChange={handleDateChange}
                     maximumDate={new Date()}
+                  />
+                )}
+                {showTimePicker && Platform.OS === 'android' && (
+                  <DateTimePicker
+                    value={selectedDate instanceof Date && !isNaN(selectedDate.getTime()) ? selectedDate : new Date()}
+                    mode="time"
+                    display="default"
+                    onChange={handleTimeChange}
                   />
                 )}
               </>

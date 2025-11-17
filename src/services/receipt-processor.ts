@@ -18,7 +18,7 @@ import { getCategories } from './categories';
 export interface ReceiptData {
   merchant: string;        // 商家名称
   amount: number;          // 金额（总额）
-  date?: string;           // 交易日期 (ISO 格式 YYYY-MM-DD)
+  date?: string;           // 交易日期时间 (ISO 格式 YYYY-MM-DDTHH:MM)
   items?: string[];        // 购买项目列表
   description?: string;    // 描述
   category?: string;       // 分类建议
@@ -226,7 +226,7 @@ IMPORTANT: Return ONLY a valid JSON object with this exact structure:
 {
   "merchant": "store or restaurant name",
   "amount": 0.00,
-  "date": "YYYY-MM-DD",
+  "date": "YYYY-MM-DDTHH:MM",
   "items": ["item1", "item2"],
   "description": "brief description",
   "category": "category name",
@@ -236,7 +236,11 @@ IMPORTANT: Return ONLY a valid JSON object with this exact structure:
 Rules:
 - merchant: Extract the store/restaurant name from the receipt
 - amount: Extract the TOTAL amount as a number (not a string)
-- date: Convert to YYYY-MM-DD format. If not found, use today's date
+- date: Convert to YYYY-MM-DDTHH:MM format in LOCAL TIME (e.g., "2024-11-17T14:33" for 2:33 PM on Nov 17, 2024)
+  * Extract time from receipt timestamp if available (use 24-hour format: 14:33 for 2:33 PM)
+  * If time is not found, use 12:00 (noon)
+  * If date is not found, use current date and time
+  * IMPORTANT: Use the EXACT time shown on the receipt (e.g., if receipt shows 14:33, use "YYYY-MM-DDT14:33")
 - items: List of purchased items. If unclear, use empty array []
 - description: Brief summary of what was purchased
 - category: Choose from existing categories or suggest a new one
@@ -352,7 +356,7 @@ function sanitizeReceiptData(data: any, existingCategories: string[]): ReceiptDa
   return {
     merchant: String(data.merchant || 'Unknown Merchant').trim(),
     amount: Math.max(0, Number(data.amount) || 0),
-    date: data.date ? formatDateISO(data.date) : formatDateISO(new Date().toISOString()),
+    date: data.date ? formatDateTimeISO(data.date) : formatDateTimeISO(new Date().toISOString()),
     items: Array.isArray(data.items) 
       ? data.items.filter((item: any) => item && String(item).trim()) 
       : [],
@@ -364,18 +368,44 @@ function sanitizeReceiptData(data: any, existingCategories: string[]): ReceiptDa
 
 /**
  * ============================================================
- * 辅助函数：格式化日期为 ISO 格式
+ * 辅助函数：格式化日期时间为 ISO 格式
  * ============================================================
  */
-function formatDateISO(dateString: string): string {
+function formatDateTimeISO(dateString: string): string {
   try {
+    // Check if already in YYYY-MM-DDTHH:MM format
+    const isoFormat = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/;
+    if (isoFormat.test(dateString)) {
+      // Already in correct format, validate and return
+      const date = new Date(dateString);
+      if (!isNaN(date.getTime())) {
+        return dateString;
+      }
+    }
+    
+    // Try to parse and convert to local time (not UTC)
     const date = new Date(dateString);
     if (isNaN(date.getTime())) {
       throw new Error('Invalid date');
     }
-    return date.toISOString().split('T')[0]; // YYYY-MM-DD
+    
+    // Format as YYYY-MM-DDTHH:MM in LOCAL timezone (not UTC)
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    const hours = String(date.getHours()).padStart(2, '0');
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+    
+    return `${year}-${month}-${day}T${hours}:${minutes}`;
   } catch {
-    return new Date().toISOString().split('T')[0];
+    // Fallback to current local time
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    const hours = String(now.getHours()).padStart(2, '0');
+    const minutes = String(now.getMinutes()).padStart(2, '0');
+    return `${year}-${month}-${day}T${hours}:${minutes}`;
   }
 }
 
