@@ -55,13 +55,6 @@ export default function AddScreen() {
     [key: string]: { amountStr?: string; priceStr?: string };
   }>({});
 
-  const quickAddItems = [
-    { label: '$4.5 Coffee', amount: 4.5 },
-    { label: '$12 Lunch', amount: 12 },
-    { label: '$35 Gas', amount: 35 },
-    { label: '$45 Groceries', amount: 45 },
-  ];
-
   // Auto-calculate amount from itemlist (only if user hasn't manually overridden)
   useEffect(() => {
     if (itemlist.length > 0 && !userOverrodeAmount) {
@@ -478,28 +471,6 @@ export default function AddScreen() {
     }
   };
 
-  const handleQuickAdd = async (item: { label: string; amount: number }) => {
-    try {
-      setSubmitting(true);
-
-      await addTransaction({
-        amount: -item.amount, // Negative for expense
-        occurred_at: new Date().toISOString(),
-        merchant: item.label,
-        category_id: categoryId || null,
-        source: 'manual',
-        note: 'Quick Add: ' + item.label,
-      });
-
-      Alert.alert('Success', `${item.label} added successfully!`);
-    } catch (error) {
-      console.error('Failed to add quick transaction:', error);
-      Alert.alert('Error', 'Failed to add transaction. Please try again.');
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
@@ -529,19 +500,21 @@ export default function AddScreen() {
             ]}
             onPress={() => setInputMethod('manual')}
           >
-            <Ionicons
-              name="cash-outline"
-              size={32}
-              color={inputMethod === 'manual' ? Colors.white : Colors.textSecondary}
-            />
-            <Text
-              style={[
-                styles.methodLabel,
-                inputMethod === 'manual' && styles.methodLabelActive,
-              ]}
-            >
-              Manual
-            </Text>
+            <View style={styles.methodButtonContent}>
+              <Ionicons
+                name="cash-outline"
+                size={20}
+                color={inputMethod === 'manual' ? Colors.white : Colors.textSecondary}
+              />
+              <Text
+                style={[
+                  styles.methodLabel,
+                  inputMethod === 'manual' && styles.methodLabelActive,
+                ]}
+              >
+                Manual
+              </Text>
+            </View>
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -551,29 +524,31 @@ export default function AddScreen() {
             ]}
             onPress={() => setInputMethod('receipt')}
           >
-            <Ionicons
-              name="camera-outline"
-              size={32}
-              color={inputMethod === 'receipt' ? Colors.white : Colors.textSecondary}
-            />
-            <Text
-              style={[
-                styles.methodLabel,
-                inputMethod === 'receipt' && styles.methodLabelActive,
-              ]}
-            >
-              Receipt
-            </Text>
+            <View style={styles.methodButtonContent}>
+              <Ionicons
+                name="camera-outline"
+                size={20}
+                color={inputMethod === 'receipt' ? Colors.white : Colors.textSecondary}
+              />
+              <Text
+                style={[
+                  styles.methodLabel,
+                  inputMethod === 'receipt' && styles.methodLabelActive,
+                ]}
+              >
+                Receipt
+              </Text>
+            </View>
           </TouchableOpacity>
         </View>
 
         {/* Receipt Upload Area */}
         {inputMethod === 'receipt' && (
           <View style={styles.uploadArea}>
-            <View style={styles.uploadIcon}>
-              <Ionicons name="cloud-upload-outline" size={48} color={Colors.primary} />
+            <View style={styles.uploadHeaderRow}>
+              <Ionicons name="cloud-upload-outline" size={28} color={Colors.primary} />
+              <Text style={styles.uploadText}>Upload a receipt or take a photo</Text>
             </View>
-            <Text style={styles.uploadText}>Upload a receipt or take a photo</Text>
             <View style={styles.uploadButtonRow}>
               <TouchableOpacity 
                 style={[styles.uploadButton, processingReceipt && styles.uploadButtonDisabled]} 
@@ -927,23 +902,6 @@ export default function AddScreen() {
           )}
         </View>
 
-        {/* Quick Add */}
-        <View style={styles.card}>
-          <Text style={styles.sectionTitle}>Quick Add</Text>
-          <View style={styles.quickAddGrid}>
-            {quickAddItems.map((item, index) => (
-              <TouchableOpacity 
-                key={index} 
-                style={styles.quickAddButton}
-                onPress={() => handleQuickAdd(item)}
-                disabled={submitting || !session}
-              >
-                <Text style={styles.quickAddText}>{item.label}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        </View>
-
         <View style={{ height: 20 }} />
       </ScrollView>
 
@@ -1082,11 +1040,10 @@ export default function AddScreen() {
       >
         <View style={styles.modalOverlay}>
           <View style={styles.confirmModalContent}>
-            <View style={styles.confirmModalIcon}>
-              <Ionicons name="sparkles" size={48} color={Colors.primary} />
+            <View style={styles.confirmModalTitleRow}>
+              <Ionicons name="sparkles" size={26} color={Colors.primary} />
+              <Text style={styles.confirmModalTitle}>🤖 AI Suggestion</Text>
             </View>
-            
-            <Text style={styles.confirmModalTitle}>🤖 AI Suggestion</Text>
             
             <Text style={styles.confirmModalMessage}>
               AI suggests creating a new category:{'\n'}
@@ -1141,12 +1098,17 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: Colors.white,
     borderRadius: 12,
-    padding: 20,
+    paddingVertical: 14,
+    paddingHorizontal: 10,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
     borderWidth: 2,
     borderColor: Colors.gray200,
+  },
+  methodButtonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   methodButtonActive: {
     backgroundColor: Colors.textPrimary,
@@ -1156,6 +1118,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     color: Colors.textSecondary,
+    marginLeft: 6,
   },
   methodLabelActive: {
     color: Colors.white,
@@ -1163,38 +1126,48 @@ const styles = StyleSheet.create({
   uploadArea: {
     backgroundColor: Colors.white,
     borderRadius: 16,
-    padding: 32,
-    marginBottom: 24,
-    alignItems: 'center',
+    padding: 16,
+    marginBottom: 16,
     borderWidth: 2,
     borderColor: Colors.primary,
     borderStyle: 'dashed',
   },
+  uploadHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    marginBottom: 12,
+  },
   uploadIcon: {
-    marginBottom: 16,
+    marginBottom: 12,
   },
   uploadText: {
-    fontSize: 15,
+    fontSize: 13,
     color: Colors.textSecondary,
-    marginBottom: 20,
+    marginBottom: 0,
     textAlign: 'center',
+    lineHeight: 18,
   },
   uploadButtonRow: {
     flexDirection: 'row',
-    gap: 12,
+    gap: 8,
+    flexWrap: 'wrap',
+    justifyContent: 'center',
   },
   uploadButton: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
+    gap: 6,
     backgroundColor: Colors.white,
     borderWidth: 1,
     borderColor: Colors.textPrimary,
-    paddingHorizontal: 16,
+    paddingHorizontal: 12,
     paddingVertical: 10,
     borderRadius: 8,
+    minWidth: 120,
   },
   uploadButtonDisabled: {
     opacity: 0.5,
@@ -1254,13 +1227,13 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.gray100,
     borderRadius: 8,
     paddingHorizontal: 12,
-    paddingVertical: 12,
+    paddingVertical: 8,
   },
   currencySelector: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 8,
-    paddingVertical: 8,
+    paddingHorizontal: 6,
+    paddingVertical: 4,
     marginRight: 4,
     borderRadius: 6,
     gap: 4,
@@ -1272,7 +1245,7 @@ const styles = StyleSheet.create({
   },
   amountField: {
     flex: 1,
-    fontSize: 16,
+    fontSize: 15,
     color: Colors.textPrimary,
     paddingHorizontal: 4,
   },
@@ -1343,25 +1316,6 @@ const styles = StyleSheet.create({
     color: Colors.error,
     textAlign: 'center',
     marginTop: 8,
-  },
-  quickAddGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
-  },
-  quickAddButton: {
-    flex: 1,
-    minWidth: '45%',
-    backgroundColor: Colors.gray100,
-    borderRadius: 8,
-    paddingVertical: 16,
-    paddingHorizontal: 12,
-    alignItems: 'center',
-  },
-  quickAddText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: Colors.textPrimary,
   },
   modalOverlay: {
     flex: 1,
@@ -1580,14 +1534,17 @@ const styles = StyleSheet.create({
     maxWidth: 400,
     alignSelf: 'center',
   },
-  confirmModalIcon: {
-    marginBottom: 20,
+  confirmModalTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    marginBottom: 12,
   },
   confirmModalTitle: {
-    fontSize: 22,
+    fontSize: 20,
     fontWeight: '700',
     color: Colors.textPrimary,
-    marginBottom: 16,
     textAlign: 'center',
   },
   confirmModalMessage: {
