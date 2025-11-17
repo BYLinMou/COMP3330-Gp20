@@ -6,6 +6,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Colors } from '../constants/theme';
 import { sendChatCompletion, ChatMessage } from '../src/services/openai-client';
 import { allTools, SYSTEM_PROMPT, Tool, parseMultipleToolCalls, isValidToolName } from '../src/services/chat-tools';
+import { renderMarkdownAsReactNative } from '../src/utils/markdownHelper';
 
 interface FloatingChatButtonProps {
   onPress?: () => void;
@@ -278,38 +279,39 @@ export default function FloatingChatButton({ onPress }: FloatingChatButtonProps)
         }));
         scrollToEnd();
 
-        // Check if there are other pending tool calls to execute (agent chaining)
-        const updatedMessages = messages.map(msg => 
-          msg.id === messageId && msg.toolCall 
-            ? {
-                ...msg,
-                toolCall: {
-                  ...msg.toolCall,
-                  isExecuting: false,
-                  result,
-                  isExpanded: false,
-                }
+        // Update the message with the result
+        setMessages(prev => prev.map(msg => {
+          if (msg.id === messageId && msg.toolCall) {
+            return {
+              ...msg,
+              toolCall: {
+                ...msg.toolCall,
+                isExecuting: false,
+                result,
+                isExpanded: false,
               }
-            : msg
-        );
-
-        const pendingToolCalls = updatedMessages.filter(
-          m => m.isToolCall && m.toolCall && !m.toolCall.result && !m.toolCall.error
-        );
-
-        if (pendingToolCalls.length > 0) {
-          // There are more tool calls to execute - automatically execute the next one
-          const nextToolCall = pendingToolCalls[0];
-          if (nextToolCall.id) {
-            // Use setTimeout to give UI a chance to update
-            setTimeout(() => {
-              confirmToolCall(nextToolCall.id);
-            }, 500);
+            };
           }
-        } else {
-          // All tool calls have been executed - send final AI response
-          sendToolChainResultToAI(updatedMessages, result, message.toolCall!.name);
-        }
+          return msg;
+        }));
+        scrollToEnd();
+
+        // Check if there are any remaining pending tool calls
+        // Give React time to update state before checking
+        setTimeout(() => {
+          setMessages(currentMessages => {
+            const pendingToolCalls = currentMessages.filter(
+              m => m.isToolCall && m.toolCall && !m.toolCall.result && !m.toolCall.error && !m.toolCall.isExecuting
+            );
+
+            // If no more pending tool calls, send results to AI
+            if (pendingToolCalls.length === 0) {
+              sendToolChainResultToAI(currentMessages, result, message.toolCall!.name);
+            }
+
+            return currentMessages;
+          });
+        }, 100);
       }
     } catch (error) {
       console.error('Error executing tool:', error);
@@ -454,11 +456,31 @@ export default function FloatingChatButton({ onPress }: FloatingChatButtonProps)
           toolCall: {
             ...msg.toolCall,
             isExpanded: false,
+            error: 'Cancelled by user',
           }
         };
       }
       return msg;
     }));
+    scrollToEnd();
+
+    // Check if there are any remaining pending tool calls after cancellation
+    setTimeout(() => {
+      setMessages(currentMessages => {
+        const pendingToolCalls = currentMessages.filter(
+          m => m.isToolCall && m.toolCall && !m.toolCall.result && !m.toolCall.error && !m.toolCall.isExecuting
+        );
+
+        // If no more pending tool calls, send results to AI
+        if (pendingToolCalls.length === 0) {
+          // Get the cancelled message for context
+          const cancelledMsg = currentMessages.find(m => m.id === messageId);
+          sendToolChainResultToAI(currentMessages, null, cancelledMsg?.toolCall?.name || 'unknown');
+        }
+
+        return currentMessages;
+      });
+    }, 100);
   };
 
   const handleBackPress = () => {
@@ -506,8 +528,9 @@ export default function FloatingChatButton({ onPress }: FloatingChatButtonProps)
                   {item.isAIExplanation ? (
                     <View style={[styles.messageContainer, styles.aiMessage]}>
                       <Text style={[styles.messageText, styles.aiMessageText, { fontStyle: 'italic' }]}>
-                        💭 {item.text}
+                        💭 {/* Explanation */}
                       </Text>
+                      {renderMarkdownAsReactNative(item.text, Colors.textPrimary)}
                     </View>
                   ) : item.isToolCall ? (
                     <View style={styles.toolCallContainer}>
@@ -590,7 +613,13 @@ export default function FloatingChatButton({ onPress }: FloatingChatButtonProps)
                     </View>
                   ) : (
                     <View style={[styles.messageContainer, item.isUser ? styles.userMessage : styles.aiMessage]}>
-                      <Text style={[styles.messageText, item.isUser ? styles.userMessageText : styles.aiMessageText]}>{item.text}</Text>
+                      {item.isUser ? (
+                        <Text style={[styles.messageText, styles.userMessageText]}>{item.text}</Text>
+                      ) : (
+                        <View>
+                          {renderMarkdownAsReactNative(item.text, Colors.textPrimary)}
+                        </View>
+                      )}
                     </View>
                   )}
                 </View>
