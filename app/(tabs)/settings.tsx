@@ -53,14 +53,18 @@ export default function SettingsScreen() {
   const [showModelSelection, setShowModelSelection] = useState(false);
   const [showPrimaryModelModal, setShowPrimaryModelModal] = useState(false);
   const [showFallbackModelModal, setShowFallbackModelModal] = useState(false);
+  const [primaryModelSearch, setPrimaryModelSearch] = useState('');
+  const [fallbackModelSearch, setFallbackModelSearch] = useState('');
+  const [primarySearchFocused, setPrimarySearchFocused] = useState(false);
+  const [fallbackSearchFocused, setFallbackSearchFocused] = useState(false);
 
   // Categories state
   const [categories, setCategories] = useState<Category[]>([]);
   const [loadingCategories, setLoadingCategories] = useState(true);
   const [newCategoryName, setNewCategoryName] = useState('');
 
-  // Collapsible section state - track which section is expanded
-  const [expandedSection, setExpandedSection] = useState<string | null>('profile');
+  // Collapsible section state - track哪个区块展开，默认全部收起
+  const [expandedSection, setExpandedSection] = useState<string | null>(null);
 
   // Handler to toggle section expansion
   const toggleSection = (sectionName: string) => {
@@ -68,6 +72,47 @@ export default function SettingsScreen() {
       setExpandedSection(null);
     } else {
       setExpandedSection(sectionName);
+    }
+  };
+
+  // Handler to toggle model selection with alert if no models available
+  const toggleModelSelection = () => {
+    if (showModelSelection) {
+      setShowModelSelection(false);
+    } else {
+      // Check if models are empty and no previously selected models
+      if (availableModels.length === 0 && !primaryModel && !fallbackModel) {
+        Alert.alert(
+          'No Models Available',
+          'You need to fetch the available models first. Would you like to fetch them now?',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            {
+              text: 'Fetch Models',
+              onPress: async () => {
+                if (!openaiUrl.trim() || !openaiKey.trim()) {
+                  Alert.alert('Validation Error', 'Please enter both API URL and API Key first');
+                  return;
+                }
+                try {
+                  setLoadingModels(true);
+                  const models = await fetchOpenAIModels(openaiUrl, openaiKey);
+                  setAvailableModels(models);
+                  setShowModelSelection(true);
+                  Alert.alert('Success', `Found ${models.length} available models`);
+                } catch (error: any) {
+                  Alert.alert('Connection Failed', error.message || 'Failed to fetch models');
+                  setAvailableModels([]);
+                } finally {
+                  setLoadingModels(false);
+                }
+              },
+            },
+          ]
+        );
+      } else {
+        setShowModelSelection(true);
+      }
     }
   };
 
@@ -411,11 +456,11 @@ export default function SettingsScreen() {
                 </View>
               </View>
 
-              {/* Model Selection Collapsible Section */}
+                {/* Model Selection Collapsible Section */}
               <View style={styles.collapsibleSection}>
                 <TouchableOpacity 
                   style={styles.modelSelectionHeader}
-                  onPress={() => setShowModelSelection(!showModelSelection)}
+                  onPress={toggleModelSelection}
                 >
                   <View style={styles.collapsibleHeaderLeft}>
                     <Ionicons 
@@ -432,9 +477,7 @@ export default function SettingsScreen() {
                       </Text>
                     </View>
                   )}
-                </TouchableOpacity>
-
-                {showModelSelection && (
+                </TouchableOpacity>                {showModelSelection && (
                   <View style={{ marginTop: 6 }}>
                     {/* Fetch Models Button */}
                     <View style={{ alignItems: 'center' }}>
@@ -816,7 +859,12 @@ export default function SettingsScreen() {
         visible={showPrimaryModelModal}
         transparent
         animationType="slide"
-        onRequestClose={() => setShowPrimaryModelModal(false)}
+        onRequestClose={() => {
+          // Only close if search input is not focused
+          if (!primarySearchFocused) {
+            setShowPrimaryModelModal(false);
+          }
+        }}
       >
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
@@ -827,8 +875,32 @@ export default function SettingsScreen() {
               </TouchableOpacity>
             </View>
             
+            {/* Search Input */}
+            <View style={styles.modalSearchContainer}>
+              <Ionicons name="search-outline" size={20} color={Colors.textSecondary} />
+              <TextInput
+                style={styles.modalSearchInput}
+                placeholder="Search models..."
+                value={primaryModelSearch}
+                onChangeText={setPrimaryModelSearch}
+                onFocus={() => setPrimarySearchFocused(true)}
+                onBlur={() => setPrimarySearchFocused(false)}
+                placeholderTextColor={Colors.textSecondary}
+              />
+              {primaryModelSearch !== '' && (
+                <TouchableOpacity onPress={() => setPrimaryModelSearch('')}>
+                  <Ionicons name="close-circle" size={20} color={Colors.textSecondary} />
+                </TouchableOpacity>
+              )}
+            </View>
+            
             <ScrollView style={styles.modalList}>
-              {availableModels.map((model) => (
+              {availableModels
+                .filter(model => 
+                  model.id.toLowerCase().includes(primaryModelSearch.toLowerCase()) ||
+                  model.owned_by.toLowerCase().includes(primaryModelSearch.toLowerCase())
+                )
+                .map((model) => (
                 <TouchableOpacity
                   key={model.id}
                   style={[
@@ -838,6 +910,7 @@ export default function SettingsScreen() {
                   onPress={() => {
                     setPrimaryModel(model.id);
                     setShowPrimaryModelModal(false);
+                    setPrimaryModelSearch('');
                   }}
                 >
                   <View style={styles.modalItemLeft}>
@@ -856,6 +929,16 @@ export default function SettingsScreen() {
                   )}
                 </TouchableOpacity>
               ))}
+              {availableModels.filter(model => 
+                model.id.toLowerCase().includes(primaryModelSearch.toLowerCase()) ||
+                model.owned_by.toLowerCase().includes(primaryModelSearch.toLowerCase())
+              ).length === 0 && (
+                <View style={styles.emptySearchContainer}>
+                  <Ionicons name="search-outline" size={32} color={Colors.textSecondary} />
+                  <Text style={styles.emptySearchText}>No models found</Text>
+                  <Text style={styles.emptySearchSubtext}>Try searching with different keywords</Text>
+                </View>
+              )}
             </ScrollView>
           </View>
         </View>
@@ -866,7 +949,12 @@ export default function SettingsScreen() {
         visible={showFallbackModelModal}
         transparent
         animationType="slide"
-        onRequestClose={() => setShowFallbackModelModal(false)}
+        onRequestClose={() => {
+          // Only close if search input is not focused
+          if (!fallbackSearchFocused) {
+            setShowFallbackModelModal(false);
+          }
+        }}
       >
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
@@ -877,30 +965,56 @@ export default function SettingsScreen() {
               </TouchableOpacity>
             </View>
             
+            {/* Search Input */}
+            <View style={styles.modalSearchContainer}>
+              <Ionicons name="search-outline" size={20} color={Colors.textSecondary} />
+              <TextInput
+                style={styles.modalSearchInput}
+                placeholder="Search models..."
+                value={fallbackModelSearch}
+                onChangeText={setFallbackModelSearch}
+                onFocus={() => setFallbackSearchFocused(true)}
+                onBlur={() => setFallbackSearchFocused(false)}
+                placeholderTextColor={Colors.textSecondary}
+              />
+              {fallbackModelSearch !== '' && (
+                <TouchableOpacity onPress={() => setFallbackModelSearch('')}>
+                  <Ionicons name="close-circle" size={20} color={Colors.textSecondary} />
+                </TouchableOpacity>
+              )}
+            </View>
+            
             <ScrollView style={styles.modalList}>
-              <TouchableOpacity
-                style={[
-                  styles.modalItem,
-                  !fallbackModel && styles.modalItemSelected
-                ]}
-                onPress={() => {
-                  setFallbackModel('');
-                  setShowFallbackModelModal(false);
-                }}
-              >
-                <Text style={[
-                  styles.modalItemText,
-                  !fallbackModel && styles.modalItemTextSelected
-                ]}>
-                  None
-                </Text>
-                {!fallbackModel && (
-                  <Ionicons name="checkmark" size={20} color={Colors.primary} />
-                )}
-              </TouchableOpacity>
+              {(fallbackModelSearch === '' || !fallbackModelSearch) && (
+                <TouchableOpacity
+                  style={[
+                    styles.modalItem,
+                    !fallbackModel && styles.modalItemSelected
+                  ]}
+                  onPress={() => {
+                    setFallbackModel('');
+                    setShowFallbackModelModal(false);
+                    setFallbackModelSearch('');
+                  }}
+                >
+                  <Text style={[
+                    styles.modalItemText,
+                    !fallbackModel && styles.modalItemTextSelected
+                  ]}>
+                    None
+                  </Text>
+                  {!fallbackModel && (
+                    <Ionicons name="checkmark" size={20} color={Colors.primary} />
+                  )}
+                </TouchableOpacity>
+              )}
               
               {availableModels
-                .filter(model => model.id !== primaryModel)
+                .filter(model => 
+                  model.id !== primaryModel &&
+                  (model.id.toLowerCase().includes(fallbackModelSearch.toLowerCase()) ||
+                   model.owned_by.toLowerCase().includes(fallbackModelSearch.toLowerCase()))
+                )
                 .map((model) => (
                   <TouchableOpacity
                     key={model.id}
@@ -911,6 +1025,7 @@ export default function SettingsScreen() {
                     onPress={() => {
                       setFallbackModel(model.id);
                       setShowFallbackModelModal(false);
+                      setFallbackModelSearch('');
                     }}
                   >
                     <View style={styles.modalItemLeft}>
@@ -929,6 +1044,17 @@ export default function SettingsScreen() {
                     )}
                   </TouchableOpacity>
                 ))}
+              {availableModels.filter(model => 
+                model.id !== primaryModel &&
+                (model.id.toLowerCase().includes(fallbackModelSearch.toLowerCase()) ||
+                 model.owned_by.toLowerCase().includes(fallbackModelSearch.toLowerCase()))
+              ).length === 0 && fallbackModelSearch !== '' && (
+                <View style={styles.emptySearchContainer}>
+                  <Ionicons name="search-outline" size={32} color={Colors.textSecondary} />
+                  <Text style={styles.emptySearchText}>No models found</Text>
+                  <Text style={styles.emptySearchSubtext}>Try searching with different keywords</Text>
+                </View>
+              )}
             </ScrollView>
           </View>
         </View>
@@ -1278,12 +1404,46 @@ const styles = StyleSheet.create({
   modalList: {
     maxHeight: 400,
   },
+  modalSearchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: 16,
+    marginVertical: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    backgroundColor: Colors.gray100,
+    borderRadius: 8,
+    gap: 8,
+  },
+  modalSearchInput: {
+    flex: 1,
+    fontSize: 15,
+    color: Colors.textPrimary,
+  },
+  emptySearchContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 48,
+    paddingHorizontal: 24,
+  },
+  emptySearchText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: Colors.textPrimary,
+    marginTop: 12,
+  },
+  emptySearchSubtext: {
+    fontSize: 14,
+    color: Colors.textSecondary,
+    marginTop: 6,
+    textAlign: 'center',
+  },
   modalItem: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingVertical: 16,
-    paddingHorizontal: 5,
+    paddingHorizontal: 15,
     borderBottomWidth: 1,
     borderBottomColor: Colors.gray100,
   },
