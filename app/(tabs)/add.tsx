@@ -730,11 +730,18 @@ export default function AddScreen() {
 
           {/* Item List */}
           <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>Item List</Text>
+            <Text style={styles.inputLabel}>Item List (Optional)</Text>
             {itemlist.length > 0 && (
               <Text style={styles.itemListSubtext}>
                 Swipe left on any item to delete it.
               </Text>
+            )}
+            {itemlist.length === 0 && (
+              <View style={styles.emptyItemListPlaceholder}>
+                <Ionicons name="list-outline" size={32} color={Colors.gray300} />
+                <Text style={styles.emptyItemListText}>No items added yet</Text>
+                <Text style={styles.emptyItemListSubtext}>Add items to break down your transaction</Text>
+              </View>
             )}
             {itemlist.length > 0 && (
               <View style={styles.itemListHeader}>
@@ -883,16 +890,29 @@ export default function AddScreen() {
               style={styles.selectInput}
               onPress={() => setShowPaymentMethodModal(true)}
             >
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                {selectedPaymentMethod && (() => {
-                  const selectedMethod = paymentMethods.find(m => m.name === selectedPaymentMethod);
-                  return selectedMethod?.icon ? (
-                    <Ionicons name={selectedMethod.icon as any} size={18} color={Colors.textSecondary} />
-                  ) : null;
-                })()}
-                <Text style={selectedPaymentMethod ? styles.selectValue : styles.selectPlaceholder}>
-                  {selectedPaymentMethod || 'Select payment method'}
-                </Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
+                {selectedPaymentMethod ? (
+                  <>
+                    {(() => {
+                      const selectedMethod = paymentMethods.find(m => m.name === selectedPaymentMethod);
+                      return selectedMethod?.icon ? (
+                        <Ionicons name={selectedMethod.icon as any} size={18} color={Colors.primary} />
+                      ) : (
+                        <Ionicons name="card-outline" size={18} color={Colors.primary} />
+                      );
+                    })()}
+                    <Text style={styles.selectValue}>
+                      {selectedPaymentMethod}
+                    </Text>
+                  </>
+                ) : (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                    <Ionicons name="wallet-outline" size={18} color={Colors.gray300} />
+                    <Text style={styles.selectPlaceholder}>
+                      Select payment method
+                    </Text>
+                  </View>
+                )}
               </View>
               <Ionicons name="chevron-down" size={20} color={Colors.textSecondary} />
             </TouchableOpacity>
@@ -920,6 +940,34 @@ export default function AddScreen() {
               value={notes}
               onChangeText={setNotes}
             />
+          </View>
+
+          {/* Transaction Summary */}
+          <View style={styles.summaryCard}>
+            <View style={styles.summaryRow}>
+              <Text style={styles.summaryLabel}>Total Amount:</Text>
+              <Text style={styles.summaryAmount}>
+                {selectedCurrency ? currencyOptions.find(c => c.code === selectedCurrency)?.symbol : '$'}{amount || '0.00'}
+              </Text>
+            </View>
+            {itemlist.length > 0 && (
+              <View style={styles.summaryRow}>
+                <Text style={styles.summaryLabel}>Items:</Text>
+                <Text style={styles.summaryValue}>{itemlist.length}</Text>
+              </View>
+            )}
+            {categoryId && (
+              <View style={styles.summaryRow}>
+                <Text style={styles.summaryLabel}>Category:</Text>
+                <Text style={styles.summaryValue}>{categories.find(c => c.id === categoryId)?.name}</Text>
+              </View>
+            )}
+            {selectedPaymentMethod && (
+              <View style={styles.summaryRow}>
+                <Text style={styles.summaryLabel}>Payment:</Text>
+                <Text style={styles.summaryValue}>{selectedPaymentMethod}</Text>
+              </View>
+            )}
           </View>
 
           {/* Save Button */}
@@ -1722,5 +1770,59 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: Colors.textPrimary,
     fontWeight: '500',
+  },
+  emptyItemListPlaceholder: {
+    backgroundColor: Colors.gray50,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: Colors.gray200,
+    borderStyle: 'dashed',
+    paddingVertical: 24,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+    marginBottom: 12,
+    gap: 8,
+  },
+  emptyItemListText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: Colors.textSecondary,
+    textAlign: 'center',
+  },
+  emptyItemListSubtext: {
+    fontSize: 13,
+    color: Colors.gray400,
+    textAlign: 'center',
+  },
+  summaryCard: {
+    backgroundColor: Colors.gray50,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.gray200,
+    paddingVertical: 16,
+    paddingHorizontal: 16,
+    marginBottom: 20,
+    gap: 12,
+  },
+  summaryRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 4,
+  },
+  summaryLabel: {
+    fontSize: 14,
+    color: Colors.textSecondary,
+    fontWeight: '500',
+  },
+  summaryAmount: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: Colors.primary,
+  },
+  summaryValue: {
+    fontSize: 14,
+    color: Colors.textPrimary,
+    fontWeight: '600',
   },
 });

@@ -1,14 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, ScrollView, StyleSheet, Dimensions, ActivityIndicator } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, Dimensions, ActivityIndicator, TouchableOpacity, Modal, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../constants/theme';
 import { 
   getRecentTransactions, 
-  getIncomeAndExpenses, 
-  getSpendingBreakdown,
+  getIncomeAndExpenses,
   subscribeToTransactionChanges,
+  deleteTransaction,
   type Transaction 
 } from '../../src/services/transactions';
 import { useAuth } from '../../src/providers/AuthProvider';
@@ -39,31 +39,19 @@ export default function HomeScreen() {
   const [balance, setBalance] = useState(0);
   const [income, setIncome] = useState(0);
   const [spent, setSpent] = useState(0);
-  const [spendingData, setSpendingData] = useState<Array<{
-    category: string;
-    amount: number;
-    color: string;
-    percentage: number;
-  }>>([]);
+  const [transactionLimit, setTransactionLimit] = useState(10);
+  const [showLimitDropdown, setShowLimitDropdown] = useState(false);
+  const [expandedTransactionId, setExpandedTransactionId] = useState<string | null>(null);
 
   const budget = 2000; // This could also come from Supabase
   const budgetUsed = Math.round((spent / budget) * 100);
-
-  // Category color mapping
-  const categoryColors: Record<string, string> = {
-    'Food': Colors.chartPurple,
-    'Transport': Colors.chartCyan,
-    'Entertainment': Colors.chartOrange,
-    'Shopping': Colors.chartRed,
-    'Bills': Colors.chartGreen,
-    'Income': Colors.success,
-  };
+  const limitOptions = [5, 10, 20, 50, 100];
 
   useEffect(() => {
     if (session) {
       loadData();
     }
-  }, [session]);
+  }, [session, transactionLimit]);
 
   // Realtime: refresh when transactions change
   useEffect(() => {
@@ -99,27 +87,15 @@ export default function HomeScreen() {
       const endDate = lastDay.toISOString().split('T')[0];
 
       // Fetch all data in parallel
-      const [transactions, stats, breakdown] = await Promise.all([
-        getRecentTransactions(10),
+      const [transactions, stats] = await Promise.all([
+        getRecentTransactions(transactionLimit),
         getIncomeAndExpenses(startDate, endDate),
-        getSpendingBreakdown(startDate, endDate),
       ]);
 
       setRecentTransactions(transactions);
       setIncome(stats.income);
       setSpent(stats.expenses);
       setBalance(stats.balance);
-
-      // Transform spending breakdown into chart data
-      const total = Object.values(breakdown).reduce<number>((sum, val) => sum + (val as number), 0);
-      const chartData = Object.entries(breakdown).map(([category, amount]) => ({
-        category,
-        amount: amount as number,
-        color: categoryColors[category] || Colors.chartPurple,
-        percentage: Math.round(((amount as number) / total) * 100),
-      }));
-      
-      setSpendingData(chartData);
     } catch (error) {
       console.error('Error loading dashboard data:', error);
     } finally {
@@ -175,95 +151,51 @@ export default function HomeScreen() {
           </View>
         </View>
 
-        {/* Spending Breakdown */}
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>Spending Breakdown</Text>
-          
-          {loading ? (
-            <View style={styles.loadingContainer}>
-              <ActivityIndicator size="large" color={Colors.primary} />
-            </View>
-          ) : spendingData.length === 0 ? (
-            <View style={styles.emptyContainer}>
-              <Ionicons name="pie-chart-outline" size={48} color={Colors.textSecondary} />
-              <Text style={styles.emptyText}>No spending data yet</Text>
-            </View>
-          ) : (
-            <>
-              {/* Donut Chart */}
-              <View style={styles.chartContainer}>
-                <View style={styles.donutChart}>
-                  {spendingData.map((item, index) => {
-                    const totalDegrees = spendingData.reduce((sum, d) => sum + (d.percentage * 3.6), 0);
-                    let startDegree = 0;
-                    for (let i = 0; i < index; i++) {
-                      startDegree += spendingData[i].percentage * 3.6;
-                    }
-                    return (
-                      <View
-                        key={item.category}
-                        style={[
-                          styles.chartSegment,
-                          {
-                            backgroundColor: item.color,
-                            transform: [
-                              { rotate: `${startDegree}deg` },
-                            ],
-                          },
-                        ]}
-                      />
-                    );
-                  })}
-                  <View style={styles.donutHole} />
-                </View>
-              </View>
-
-              {/* Legend */}
-              <View style={styles.legend}>
-                <View style={styles.legendColumn}>
-                  {spendingData.slice(0, Math.ceil(spendingData.length / 2)).map((item) => (
-                    <View key={item.category} style={styles.legendItem}>
-                      <View style={[styles.legendDot, { backgroundColor: item.color }]} />
-                      <Text style={styles.legendLabel}>{item.category}</Text>
-                      <Text style={styles.legendAmount}>${item.amount.toFixed(2)}</Text>
-                    </View>
-                  ))}
-                </View>
-                <View style={styles.legendColumn}>
-                  {spendingData.slice(Math.ceil(spendingData.length / 2)).map((item) => (
-                    <View key={item.category} style={styles.legendItem}>
-                      <View style={[styles.legendDot, { backgroundColor: item.color }]} />
-                      <Text style={styles.legendLabel}>{item.category}</Text>
-                      <Text style={styles.legendAmount}>${item.amount.toFixed(2)}</Text>
-                    </View>
-                  ))}
-                </View>
-              </View>
-            </>
-          )}
-        </View>
-
-        {/* This Week */}
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>This Week</Text>
-          <View style={styles.weekChart}>
-            {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((day, index) => {
-              const heights = [60, 40, 70, 30, 80, 95, 75];
-              return (
-                <View key={day} style={styles.barContainer}>
-                  <View style={styles.barWrapper}>
-                    <View style={[styles.bar, { height: heights[index] }]} />
-                  </View>
-                  <Text style={styles.barLabel}>{day}</Text>
-                </View>
-              );
-            })}
-          </View>
-        </View>
-
         {/* Recent Transactions */}
         <View style={styles.card}>
-          <Text style={styles.cardTitle}>Recent Transactions</Text>
+          <View style={styles.cardHeader}>
+            <Text style={styles.cardTitle}>Recent Transactions</Text>
+            <View style={styles.dropdownContainer}>
+              <TouchableOpacity
+                style={styles.dropdownButton}
+                onPress={() => setShowLimitDropdown(!showLimitDropdown)}
+              >
+                <Text style={styles.dropdownButtonText}>{transactionLimit}</Text>
+                <Ionicons 
+                  name={showLimitDropdown ? "chevron-up" : "chevron-down"} 
+                  size={18} 
+                  color={Colors.primary} 
+                />
+              </TouchableOpacity>
+              
+              {showLimitDropdown && (
+                <View style={styles.dropdownMenu}>
+                  {limitOptions.map((option) => (
+                    <TouchableOpacity
+                      key={option}
+                      style={[
+                        styles.dropdownOption,
+                        transactionLimit === option && styles.dropdownOptionSelected,
+                      ]}
+                      onPress={() => {
+                        setTransactionLimit(option);
+                        setShowLimitDropdown(false);
+                      }}
+                    >
+                      <Text
+                        style={[
+                          styles.dropdownOptionText,
+                          transactionLimit === option && styles.dropdownOptionTextSelected,
+                        ]}
+                      >
+                        {option}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+            </View>
+          </View>
           {loading ? (
             <View style={styles.loadingContainer}>
               <ActivityIndicator size="large" color={Colors.primary} />
@@ -275,29 +207,162 @@ export default function HomeScreen() {
             </View>
           ) : (
             recentTransactions.map((transaction) => (
-              <View key={transaction.id} style={styles.transactionItem}>
-                <View style={styles.transactionLeft}>
-                  <Text style={styles.transactionName}>
-                    {transaction.merchant || 'Transaction'}
-                  </Text>
-                  <Text style={styles.transactionTime}>
-                    {getRelativeTime(transaction.occurred_at)}
-                  </Text>
+              <TouchableOpacity
+                key={transaction.id}
+                onPress={() => {
+                  if (expandedTransactionId === transaction.id) {
+                    setExpandedTransactionId(null);
+                  } else {
+                    setExpandedTransactionId(transaction.id);
+                  }
+                }}
+              >
+                <View style={styles.transactionItem}>
+                  <View style={styles.transactionLeft}>
+                    <Text style={styles.transactionName}>
+                      {transaction.merchant || 'Transaction'}
+                    </Text>
+                    <Text style={styles.transactionTime}>
+                      {getRelativeTime(transaction.occurred_at)}
+                    </Text>
+                  </View>
+                  <View style={styles.transactionRight}>
+                    <Text
+                      style={[
+                        styles.transactionAmount,
+                        transaction.amount > 0 ? styles.incomeAmount : styles.expenseAmount,
+                      ]}
+                    >
+                      {transaction.amount > 0 ? '+' : ''}${Math.abs(transaction.amount).toFixed(2)}
+                    </Text>
+                    <Text style={styles.transactionCategory}>
+                      {transaction.category?.name || 'Uncategorized'}
+                    </Text>
+                  </View>
                 </View>
-                <View style={styles.transactionRight}>
-                  <Text
-                    style={[
-                      styles.transactionAmount,
-                      transaction.amount > 0 ? styles.incomeAmount : styles.expenseAmount,
-                    ]}
-                  >
-                    {transaction.amount > 0 ? '+' : ''}${Math.abs(transaction.amount).toFixed(2)}
-                  </Text>
-                  <Text style={styles.transactionCategory}>
-                    {transaction.category?.name || 'Uncategorized'}
-                  </Text>
-                </View>
-              </View>
+
+                {expandedTransactionId === transaction.id && (
+                  <View style={styles.transactionExpandedDetails}>
+                    {/* Category */}
+                    <View style={styles.expandedDetailRow}>
+                      <Text style={styles.expandedDetailLabel}>Category</Text>
+                      <Text style={styles.expandedDetailValue}>
+                        {transaction.category?.name || 'Uncategorized'}
+                      </Text>
+                    </View>
+
+                    {/* Date & Time */}
+                    <View style={styles.expandedDetailRow}>
+                      <Text style={styles.expandedDetailLabel}>Date & Time</Text>
+                      <Text style={styles.expandedDetailValue}>
+                        {new Date(transaction.occurred_at).toLocaleString('en-US', {
+                          year: 'numeric',
+                          month: 'short',
+                          day: 'numeric',
+                          hour: '2-digit',
+                          minute: '2-digit'
+                        })}
+                      </Text>
+                    </View>
+
+                    {/* Merchant */}
+                    {transaction.merchant && (
+                      <View style={styles.expandedDetailRow}>
+                        <Text style={styles.expandedDetailLabel}>Merchant</Text>
+                        <Text style={styles.expandedDetailValue}>{transaction.merchant}</Text>
+                      </View>
+                    )}
+
+                    {/* Payment Method */}
+                    {transaction.payment_method && (
+                      <View style={styles.expandedDetailRow}>
+                        <Text style={styles.expandedDetailLabel}>Payment Method</Text>
+                        <Text style={styles.expandedDetailValue}>{transaction.payment_method}</Text>
+                      </View>
+                    )}
+
+                    {/* Source */}
+                    <View style={styles.expandedDetailRow}>
+                      <Text style={styles.expandedDetailLabel}>Source</Text>
+                      <View style={styles.sourceBadge}>
+                        <Ionicons 
+                          name={
+                            transaction.source === 'manual' ? 'create-outline' :
+                            transaction.source === 'ocr' ? 'receipt-outline' :
+                            'sparkles'
+                          }
+                          size={12}
+                          color={Colors.white}
+                          style={{ marginRight: 4 }}
+                        />
+                        <Text style={styles.sourceBadgeText}>
+                          {transaction.source === 'manual' ? 'Manual' :
+                           transaction.source === 'ocr' ? 'Receipt (OCR)' :
+                           'AI Suggested'}
+                        </Text>
+                      </View>
+                    </View>
+
+                    {/* Items */}
+                    {(transaction as any).items && (transaction as any).items.length > 0 && (
+                      <View style={styles.expandedDetailRow}>
+                        <Text style={styles.expandedDetailLabel}>Items</Text>
+                        <View style={styles.itemsList}>
+                          {(transaction as any).items.map((item: any, index: number) => (
+                            <View key={index} style={styles.itemsListRow}>
+                              <Text style={styles.itemsListName}>{item.name}</Text>
+                              <View style={styles.itemsListQtyPrice}>
+                                <Text style={styles.itemsListQty}>×{item.amount}</Text>
+                                <Text style={styles.itemsListPrice}>
+                                  ${(item.price * item.amount).toFixed(2)}
+                                </Text>
+                              </View>
+                            </View>
+                          ))}
+                        </View>
+                      </View>
+                    )}
+
+                    {/* Notes */}
+                    {transaction.note && (
+                      <View style={styles.expandedDetailRow}>
+                        <Text style={styles.expandedDetailLabel}>Notes</Text>
+                        <Text style={styles.expandedDetailValue}>{transaction.note}</Text>
+                      </View>
+                    )}
+
+                    {/* Delete Button */}
+                    <TouchableOpacity
+                      style={styles.transactionDeleteButton}
+                      onPress={() => {
+                        Alert.alert(
+                          'Delete Transaction',
+                          'Are you sure you want to delete this transaction?',
+                          [
+                            { text: 'Cancel', style: 'cancel' },
+                            {
+                              text: 'Delete',
+                              style: 'destructive',
+                              onPress: async () => {
+                                try {
+                                  await deleteTransaction(transaction.id);
+                                  setExpandedTransactionId(null);
+                                  loadData();
+                                } catch (error) {
+                                  Alert.alert('Error', 'Failed to delete transaction');
+                                }
+                              }
+                            }
+                          ]
+                        );
+                      }}
+                    >
+                      <Ionicons name="trash-outline" size={16} color={Colors.error} />
+                      <Text style={styles.transactionDeleteButtonText}>Delete</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+              </TouchableOpacity>
             ))
           )}
         </View>
@@ -321,50 +386,51 @@ const styles = StyleSheet.create({
     padding: 16,
   },
   balanceCard: {
-    borderRadius: 20,
-    padding: 24,
+    borderRadius: 16,
+    padding: 12,
     marginBottom: 16,
     shadowColor: Colors.black,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 12,
-    elevation: 5,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
   },
   balanceHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: 6,
   },
   balanceLabel: {
-    fontSize: 16,
+    fontSize: 13,
     color: Colors.white,
     opacity: 0.9,
   },
   balanceAmount: {
-    fontSize: 48,
+    fontSize: 38,
     fontWeight: 'bold',
     color: Colors.white,
-    marginBottom: 16,
+    marginBottom: 10,
   },
   balanceFooter: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    gap: 8,
   },
   balanceItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 4,
   },
   balanceItemText: {
-    fontSize: 14,
+    fontSize: 12,
     color: Colors.white,
     fontWeight: '500',
   },
   card: {
     backgroundColor: Colors.white,
     borderRadius: 16,
-    padding: 20,
+    padding: 14,
     marginBottom: 16,
     shadowColor: Colors.black,
     shadowOffset: { width: 0, height: 2 },
@@ -376,54 +442,54 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: 12,
   },
   cardTitle: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '700',
     color: Colors.textPrimary,
-    marginBottom: 16,
+    marginBottom: 12,
   },
   badge: {
     backgroundColor: Colors.error,
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    borderRadius: 10,
   },
   badgeText: {
     color: Colors.white,
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '600',
   },
   budgetInfo: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: 8,
+    marginBottom: 6,
   },
   budgetAmount: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '600',
     color: Colors.textPrimary,
   },
   progressBar: {
-    height: 10,
+    height: 8,
     backgroundColor: Colors.gray200,
-    borderRadius: 5,
+    borderRadius: 4,
     overflow: 'hidden',
-    marginBottom: 12,
+    marginBottom: 10,
   },
   progressFill: {
     height: '100%',
     backgroundColor: Colors.textPrimary,
-    borderRadius: 5,
+    borderRadius: 4,
   },
   warningContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 4,
   },
   warningText: {
-    fontSize: 13,
+    fontSize: 12,
     color: Colors.error,
     fontWeight: '500',
   },
@@ -453,66 +519,17 @@ const styles = StyleSheet.create({
     top: 40,
     left: 40,
   },
-  legend: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  legendColumn: {
-    flex: 1,
-    gap: 12,
-  },
-  legendItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  legendDot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-  },
-  legendLabel: {
-    flex: 1,
-    fontSize: 14,
-    color: Colors.textPrimary,
-  },
-  legendAmount: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: Colors.textPrimary,
-  },
-  weekChart: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-end',
-    height: 120,
-  },
-  barContainer: {
-    flex: 1,
-    alignItems: 'center',
-    gap: 8,
-  },
-  barWrapper: {
-    flex: 1,
-    width: '100%',
-    justifyContent: 'flex-end',
-    alignItems: 'center',
-  },
-  bar: {
-    width: 28,
-    backgroundColor: Colors.primary,
-    borderRadius: 4,
-  },
-  barLabel: {
-    fontSize: 11,
-    color: Colors.textSecondary,
-  },
   transactionItem: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     paddingVertical: 12,
     borderBottomWidth: 1,
     borderBottomColor: Colors.gray100,
+  },
+  transactionContent: {
+    flex: 1,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
   },
   transactionLeft: {
     flex: 1,
@@ -545,6 +562,95 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: Colors.textSecondary,
   },
+  transactionExpandedDetails: {
+    paddingHorizontal: 0,
+    paddingTop: 12,
+    paddingBottom: 12,
+    borderTopWidth: 1,
+    borderTopColor: Colors.gray100,
+  },
+  expandedDetailRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 8,
+  },
+  expandedDetailLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: Colors.textSecondary,
+  },
+  expandedDetailValue: {
+    fontSize: 13,
+    color: Colors.textPrimary,
+    fontWeight: '500',
+    flex: 1,
+    textAlign: 'right',
+    marginLeft: 12,
+  },
+  sourceBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.primary,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  sourceBadgeText: {
+    color: Colors.white,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  itemsList: {
+    marginTop: 8,
+    backgroundColor: Colors.white,
+    borderRadius: 8,
+    overflow: 'hidden',
+  },
+  itemsListRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.gray100,
+  },
+  itemsListName: {
+    fontSize: 13,
+    color: Colors.textPrimary,
+    fontWeight: '500',
+    flex: 1,
+  },
+  itemsListQtyPrice: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  itemsListQty: {
+    fontSize: 12,
+    color: Colors.textSecondary,
+  },
+  itemsListPrice: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: Colors.primary,
+  },
+  transactionDeleteButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(255, 0, 0, 0.1)',
+    borderRadius: 8,
+    paddingVertical: 10,
+    marginTop: 8,
+  },
+  transactionDeleteButtonText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: Colors.error,
+  },
   loadingContainer: {
     paddingVertical: 40,
     alignItems: 'center',
@@ -559,5 +665,57 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: Colors.textSecondary,
     marginTop: 12,
+  },
+  dropdownContainer: {
+    position: 'relative',
+  },
+  dropdownButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    backgroundColor: Colors.gray100,
+  },
+  dropdownButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: Colors.primary,
+  },
+  dropdownMenu: {
+    position: 'absolute',
+    top: 40,
+    right: 0,
+    backgroundColor: Colors.white,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: Colors.gray200,
+    zIndex: 1000,
+    minWidth: 80,
+    shadowColor: Colors.black,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 5,
+  },
+  dropdownOption: {
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.gray100,
+  },
+  dropdownOptionSelected: {
+    backgroundColor: Colors.primary,
+    borderBottomColor: Colors.primary,
+  },
+  dropdownOptionText: {
+    fontSize: 14,
+    color: Colors.textPrimary,
+    textAlign: 'center',
+  },
+  dropdownOptionTextSelected: {
+    color: Colors.white,
+    fontWeight: '600',
   },
 });

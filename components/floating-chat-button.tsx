@@ -707,8 +707,8 @@ export default function FloatingChatButton({ onPress }: FloatingChatButtonProps)
 const styles = StyleSheet.create({
   fabGradient: {
     position: 'absolute',
-    right: 20,
-    bottom: 80,
+    right: 16,
+    bottom: 100,
     width: 48,
     height: 48,
     borderRadius: 24,

@@ -3,7 +3,7 @@ import { View, Text, ScrollView, StyleSheet, TouchableOpacity } from 'react-nati
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
-import { Colors } from '../../constants/theme';
+import { Colors, Gradients } from '../../constants/theme';
 import FloatingChatButton from '../../components/floating-chat-button';
 
 export default function PetScreen() {
@@ -27,10 +27,15 @@ export default function PetScreen() {
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         {/* Pet Speech Bubble */}
         <View style={styles.speechBubbleContainer}>
-          <View style={styles.speechBubble}>
+          <LinearGradient
+            colors={Gradients.primary.colors}
+            start={Gradients.primary.start}
+            end={Gradients.primary.end}
+            style={styles.speechBubble}
+          >
             <Text style={styles.speechText}>You're building wonderful money habits! 💖</Text>
-            <View style={styles.bubblePointer} />
-          </View>
+          </LinearGradient>
+          <View style={styles.bubblePointer} />
         </View>
 
         {/* Pet Character Card */}
@@ -178,7 +183,6 @@ const styles = StyleSheet.create({
     paddingRight: 40,
   },
   speechBubble: {
-    backgroundColor: Colors.primary,
     borderRadius: 16,
     padding: 12,
     shadowColor: Colors.black,
@@ -204,7 +208,7 @@ const styles = StyleSheet.create({
     borderTopWidth: 8,
     borderLeftColor: 'transparent',
     borderRightColor: 'transparent',
-    borderTopColor: Colors.primary,
+    borderTopColor: Colors.gradientStart,
   },
   petCard: {
     backgroundColor: Colors.white,
