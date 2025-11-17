@@ -112,21 +112,24 @@ export async function deleteCategory(id: string) {
   console.log('Successfully cleared category references, now deleting category');
 
   // Then delete the category
-  const { data, error, count } = await supabase
+  // Adding .select() to ensure the deleted row is returned, which helps with realtime events
+  const { data, error } = await supabase
     .from('categories')
     .delete()
     .eq('id', id)
-    .eq('user_id', user.id);
+    .eq('user_id', user.id)
+    .select()
+    .single();
 
-  console.log('Delete operation result:', { data, error, count });
+  console.log('Delete operation result:', { data, error });
 
   if (error) {
     console.error('Error deleting category:', error);
     throw new Error(`Failed to delete category: ${error.message || JSON.stringify(error)}`);
   }
   
-  console.log('Category deleted successfully');
-  return true;
+  console.log('Category deleted successfully:', data);
+  return data as Category;
 }
 
 /**
@@ -140,6 +143,8 @@ export async function subscribeToCategoryChanges(
   const user = userId ? { id: userId } : (await supabase.auth.getUser()).data.user;
   if (!user) throw new Error('User not authenticated');
 
+  console.log('[Categories Service] Setting up realtime subscription for user:', user.id);
+
   const channel = supabase
     .channel(`public:categories:${user.id}`)
     .on(
@@ -151,6 +156,11 @@ export async function subscribeToCategoryChanges(
         filter: `user_id=eq.${user.id}`,
       },
       (payload: any) => {
+        console.log('[Categories Service] Realtime event received:', {
+          eventType: payload.eventType,
+          newData: payload.new,
+          oldData: payload.old,
+        });
         onChange({
           eventType: payload.eventType as CategoryRealtimeEvent,
           new: (payload.new ?? null) as Category | null,
@@ -158,9 +168,14 @@ export async function subscribeToCategoryChanges(
         });
       }
     )
-    .subscribe();
+    .subscribe((status, err) => {
+      console.log('[Categories Service] Subscription status:', status, err);
+    });
+
+  console.log('[Categories Service] Channel created and subscribed');
 
   return async () => {
+    console.log('[Categories Service] Unsubscribing from realtime');
     try {
       await channel.unsubscribe();
     } catch (e) {

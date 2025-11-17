@@ -73,17 +73,27 @@ export default function SettingsScreen() {
     let unsub: undefined | (() => Promise<void>);
     (async () => {
       try {
+        console.log('[Settings] Subscribing to category changes...');
         unsub = await subscribeToCategoryChanges((change) => {
-          console.log('Category change detected:', change.eventType);
+          console.log('[Settings] Category change received:', {
+            eventType: change.eventType,
+            newCategory: change.new?.name,
+            oldCategory: change.old?.name,
+          });
           // Reload categories for any event (INSERT, UPDATE, DELETE)
+          console.log('[Settings] Reloading categories after', change.eventType);
           loadCategories();
         });
+        console.log('[Settings] Successfully subscribed to category changes');
       } catch (e) {
-        console.warn('Category realtime not active:', e);
+        console.warn('[Settings] Category realtime not active:', e);
       }
     })();
     return () => {
-      if (unsub) unsub().catch(() => {});
+      if (unsub) {
+        console.log('[Settings] Unsubscribing from category changes');
+        unsub().catch(() => {});
+      }
     };
   }, [session]);
 

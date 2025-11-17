@@ -53,20 +53,34 @@ export default function AddScreen() {
     let unsub: undefined | (() => Promise<void>);
     (async () => {
       try {
+        console.log('[Add] Subscribing to category changes...');
         unsub = await subscribeToCategoryChanges((change) => {
+          console.log('[Add] Category change received:', {
+            eventType: change.eventType,
+            newCategory: change.new?.name,
+            oldCategory: change.old?.name,
+            currentlySelected: categoryId,
+          });
+          
           // If a category is deleted and it's currently selected, clear the selection
           if (change.eventType === 'DELETE' && change.old?.id === categoryId) {
+            console.log('[Add] Currently selected category was deleted, clearing selection');
             setCategoryId('');
           }
           // Reload categories for any event (INSERT, UPDATE, DELETE)
+          console.log('[Add] Reloading categories after', change.eventType);
           loadCategories();
         });
+        console.log('[Add] Successfully subscribed to category changes');
       } catch (e) {
-        console.warn('Category realtime subscription failed:', e);
+        console.warn('[Add] Category realtime subscription failed:', e);
       }
     })();
     return () => {
-      if (unsub) unsub().catch(() => {});
+      if (unsub) {
+        console.log('[Add] Unsubscribing from category changes');
+        unsub().catch(() => {});
+      }
     };
   }, [categoryId, session]);
 
