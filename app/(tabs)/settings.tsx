@@ -674,7 +674,7 @@ export default function SettingsScreen() {
         </TouchableOpacity>
 
         <Text style={styles.version}>
-          AuraSpend v{Constants.expoConfig?.version || '0.0.0'}
+          AuraSpend v{Constants.expoConfig?.extra?.appVersion || Constants.expoConfig?.version || '0.0.0'}
         </Text>
 
         <View style={{ height: 20 }} />

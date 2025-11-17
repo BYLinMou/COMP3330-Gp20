@@ -11,7 +11,7 @@ export default ({ config }) => {
     console.warn('Please create a .env file with EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY');
   }
 
-  const appVersion = "0.0.3";
+  const appVersion = "0.0.4";
 
   return {
     expo: {
@@ -65,7 +65,8 @@ export default ({ config }) => {
       extra: {
         // Expose env vars through expo-constants
         supabaseUrl: process.env.EXPO_PUBLIC_SUPABASE_URL,
-        supabaseAnonKey: process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY
+        supabaseAnonKey: process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY,
+        appVersion: appVersion
       }
     }
   };
