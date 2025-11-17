@@ -55,6 +55,8 @@ export default function FloatingChatButton({ onPress }: FloatingChatButtonProps)
           return prev + '.';
         });
       }, 500);
+      // Scroll to end when loading starts
+      scrollToEnd();
     } else {
       setTypingDots('');
     }
@@ -132,7 +134,7 @@ export default function FloatingChatButton({ onPress }: FloatingChatButtonProps)
               toolCall: {
                 name: tool.name,
                 arguments: args,
-                isExpanded: false,
+                isExpanded: true,
                 isExecuting: false,
               }
             };
@@ -198,12 +200,71 @@ export default function FloatingChatButton({ onPress }: FloatingChatButtonProps)
                 ...msg.toolCall,
                 isExecuting: false,
                 result,
+                isExpanded: false,
               }
             };
           }
           return msg;
         }));
         scrollToEnd();
+
+        // Now send the tool result to AI to get a response
+        // Get the current messages state
+        setMessages(prevMessages => {
+          // Build the context with all previous messages including the updated tool call
+          const allMessages = prevMessages.map(m => ({
+            role: m.isUser ? 'user' as const : 'assistant' as const,
+            content: m.isToolCall ? `Tool call: ${m.toolCall?.name}` : m.text
+          }));
+
+          // Add the tool result as a new message context
+          const toolResultContext: ChatMessage[] = [
+            { role: 'system', content: SYSTEM_PROMPT },
+            ...allMessages,
+            { 
+              role: 'user', 
+              content: `Tool execution completed: ${message.toolCall!.name}\nResult: ${JSON.stringify(result, null, 2)}\n\nPlease provide a summary or explanation of what you found.`
+            }
+          ];
+
+          // Send to AI and handle response
+          (async () => {
+            // Set loading state at the start of the AI request
+            setIsLoading(true);
+            scrollToEnd();
+            
+            try {
+              const aiResponse = await sendChatCompletion({
+                messages: toolResultContext,
+                temperature: 0.7,
+                max_tokens: 500
+              });
+
+              const aiSummary: Message = {
+                id: (Date.now() + 2).toString(),
+                text: aiResponse.choices[0].message.content || 'Tool executed successfully.',
+                isUser: false,
+              };
+              // Add the AI response
+              setMessages(prev => [...prev, aiSummary]);
+              scrollToEnd();
+            } catch (aiError) {
+              console.error('Error getting AI response for tool result:', aiError);
+              // Still show success even if AI response fails
+              const successMessage: Message = {
+                id: (Date.now() + 2).toString(),
+                text: `Tool executed successfully. Result: ${JSON.stringify(result, null, 2)}`,
+                isUser: false,
+              };
+              setMessages(prev => [...prev, successMessage]);
+              scrollToEnd();
+            } finally {
+              setIsLoading(false);
+            }
+          })();
+
+          return prevMessages;
+        });
       }
     } catch (error) {
       console.error('Error executing tool:', error);
@@ -220,6 +281,7 @@ export default function FloatingChatButton({ onPress }: FloatingChatButtonProps)
         }
         return msg;
       }));
+      setIsLoading(false);
     }
   };
 
@@ -293,23 +355,38 @@ export default function FloatingChatButton({ onPress }: FloatingChatButtonProps)
                 <View>
                   {item.isToolCall ? (
                     <View style={styles.toolCallContainer}>
-                      <TouchableOpacity 
-                        style={styles.toolCallHeader}
-                        onPress={() => setMessages(prev => prev.map(msg => 
-                          msg.id === item.id && msg.toolCall
-                            ? { ...msg, toolCall: { ...msg.toolCall, isExpanded: !msg.toolCall.isExpanded } }
-                            : msg
-                        ))}
-                      >
-                        <Text style={styles.toolCallText}>
-                          {item.toolCall?.isExecuting ? '🔄 Executing' : item.text}
-                        </Text>
-                        <Ionicons 
-                          name={item.toolCall?.isExpanded ? "chevron-up" : "chevron-down"} 
-                          size={16} 
-                          color={Colors.textSecondary} 
-                        />
-                      </TouchableOpacity>
+                      {(() => {
+                        const prefix = item.toolCall?.isExecuting
+                          ? '🔄 '
+                          : item.toolCall?.error
+                            ? '❌ '
+                            : item.toolCall?.result
+                              ? '✅ '
+                              : '';
+                        const title = item.text || item.toolCall?.name || 'Tool action';
+                        const headerText = `${prefix}${title}`;
+                        return (
+                          <TouchableOpacity 
+                            style={styles.toolCallHeader}
+                            onPress={() => setMessages(prev => prev.map(msg => 
+                              msg.id === item.id && msg.toolCall
+                                ? { ...msg, toolCall: { ...msg.toolCall, isExpanded: !msg.toolCall.isExpanded } }
+                                : msg
+                            ))}
+                          >
+                            <View style={{ flex: 1, marginRight: 8 }}>
+                            <Text style={styles.toolCallText} numberOfLines={1}>
+                              {headerText}
+                            </Text>
+                          </View>
+                          <Ionicons 
+                            name={item.toolCall?.isExpanded ? "chevron-up" : "chevron-down"} 
+                            size={16} 
+                            color={Colors.textSecondary} 
+                          />
+                          </TouchableOpacity>
+                        );
+                      })()}
                       
                       {item.toolCall?.isExpanded && (
                         <View style={styles.toolCallDetails}>
@@ -360,13 +437,15 @@ export default function FloatingChatButton({ onPress }: FloatingChatButtonProps)
                       <Text style={[styles.messageText, item.isUser ? styles.userMessageText : styles.aiMessageText]}>{item.text}</Text>
                     </View>
                   )}
-                  {index === messages.length - 1 && isLoading && (
-                    <View style={[styles.messageContainer, styles.aiMessage]}>
-                      <Text style={[styles.messageText, styles.aiMessageText]}>Aura Assistant is typing{typingDots}</Text>
-                    </View>
-                  )}
                 </View>
               )}
+              ListFooterComponent={
+                isLoading ? (
+                  <View style={[styles.messageContainer, styles.aiMessage]}>
+                    <Text style={[styles.messageText, styles.aiMessageText]}>Aura Assistant is typing{typingDots}</Text>
+                  </View>
+                ) : null
+              }
               style={styles.messagesList}
             />
             
@@ -455,7 +534,6 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     padding: 10,
     borderRadius: 10,
-    maxWidth: '80%',
   },
   userMessage: {
     alignSelf: 'flex-end',
@@ -464,6 +542,7 @@ const styles = StyleSheet.create({
   aiMessage: {
     alignSelf: 'flex-start',
     backgroundColor: Colors.gray200,
+    width: '80%',
   },
   messageText: {
     fontSize: 16,
@@ -510,10 +589,12 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.gray300,
   },
   toolCallContainer: {
-    marginBottom: 20,
-    padding: 15,
-    backgroundColor: Colors.gray100,
+    marginBottom: 10,
+    padding: 10,
     borderRadius: 10,
+    width: '80%',
+    alignSelf: 'flex-start',
+    backgroundColor: Colors.gray200,
   },
   toolCallHeader: {
     flexDirection: 'row',
