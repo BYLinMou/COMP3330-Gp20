@@ -50,6 +50,9 @@ app-example
 .vscode/*
 # !.vscode/settings.json
 
+# Android Studio
+.idea/
+
 # ios workflow
 # due to no key
 .github/workflows/build-ios.yml
