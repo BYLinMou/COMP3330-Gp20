@@ -16,6 +16,7 @@ interface Message {
   text: string;
   isUser: boolean;
   isToolCall?: boolean;
+  isAIExplanation?: boolean;
   toolCall?: {
     name: string;
     arguments: any;
@@ -134,42 +135,56 @@ export default function FloatingChatButton({ onPress }: FloatingChatButtonProps)
           { role: 'system', content: SYSTEM_PROMPT },
           ...updatedMessages.map(m => ({
             role: m.isUser ? 'user' as const : 'assistant' as const,
-            content: m.isToolCall ? `Tool call: ${m.toolCall?.name}` : m.text
+            content: m.isAIExplanation ? m.text : m.isToolCall ? `Tool call: ${m.toolCall?.name}` : m.text
           })),
           { role: 'user', content: inputText }
         ];
 
-        // Call OpenAI with tools
+        // Call OpenAI WITHOUT tools parameter - let AI return JSON format
         const response = await sendChatCompletion({
           messages: chatMessages,
           temperature: 0.7,
-          tools: allTools.map(tool => ({
-            type: 'function',
-            function: {
-              name: tool.name,
-              description: tool.description,
-              parameters: tool.parameters
-            }
-          }))
         });
 
-        const aiMessage = response.choices[0].message;
+        const aiContent = response.choices[0].message.content || '';
 
-        // Check if AI wants to call a tool
-        if (aiMessage.tool_calls && aiMessage.tool_calls.length > 0) {
-          const toolCall = aiMessage.tool_calls[0];
-          const tool = allTools.find(t => t.name === toolCall.function.name);
+        // Try to parse JSON format from AI response
+        let toolCallData: { explanation: string; toolName: string; parameters: any } | null = null;
+        try {
+          // Extract JSON from markdown code blocks if present
+          const jsonMatch = aiContent.match(/```json\n([\s\S]*?)\n```/);
+          const jsonString = jsonMatch ? jsonMatch[1] : aiContent;
+          const parsed = JSON.parse(jsonString);
+          if (parsed.explanation && parsed.toolName && parsed.parameters) {
+            toolCallData = parsed;
+          }
+        } catch (e) {
+          // Not a tool call, just a regular message
+        }
+
+        if (toolCallData) {
+          const tool = allTools.find(t => t.name === toolCallData!.toolName);
+          
           if (tool) {
-            const args = JSON.parse(toolCall.function.arguments);
-            // Create tool call message
+            // 第一个气泡：AI的解释
+            const explanationMessage: Message = {
+              id: (Date.now()).toString(),
+              text: toolCallData.explanation,
+              isUser: false,
+              isAIExplanation: true,
+            };
+            setMessages(prev => [...prev, explanationMessage]);
+            scrollToEnd();
+
+            // 第二个气泡：工具调用待确认
             const toolCallMessage: Message = {
               id: (Date.now() + 1).toString(),
-              text: 'I need to perform an action. Please confirm',
+              text: 'Pending confirmation',
               isUser: false,
               isToolCall: true,
               toolCall: {
                 name: tool.name,
-                arguments: args,
+                arguments: toolCallData.parameters,
                 isExpanded: true,
                 isExecuting: false,
               }
@@ -178,9 +193,10 @@ export default function FloatingChatButton({ onPress }: FloatingChatButtonProps)
             scrollToEnd();
           }
         } else {
+          // Regular message response
           const aiResponse: Message = {
             id: (Date.now() + 1).toString(),
-            text: aiMessage.content || 'I received your message.',
+            text: aiContent || 'I received your message.',
             isUser: false,
           };
           setMessages(prev => [...prev, aiResponse]);
@@ -207,7 +223,6 @@ export default function FloatingChatButton({ onPress }: FloatingChatButtonProps)
       if (msg.id === messageId && msg.toolCall) {
         return {
           ...msg,
-          text: `User agreed to perform ${msg.toolCall.name}`,
           toolCall: {
             ...msg.toolCall,
             isExecuting: true,
@@ -244,13 +259,12 @@ export default function FloatingChatButton({ onPress }: FloatingChatButtonProps)
         }));
         scrollToEnd();
 
-        // Now send the tool result to AI to get a response
-        // Get the current messages state
+        // Get the current messages state and send tool result to AI for a response
         setMessages(prevMessages => {
-          // Build the context with all previous messages including the updated tool call
+          // Build the context with all previous messages
           const allMessages = prevMessages.map(m => ({
             role: m.isUser ? 'user' as const : 'assistant' as const,
-            content: m.isToolCall ? `Tool call: ${m.toolCall?.name}` : m.text
+            content: m.isAIExplanation ? m.text : m.isToolCall ? `Tool call: ${m.toolCall?.name}` : m.text
           }));
 
           // Add the tool result as a new message context
@@ -259,13 +273,12 @@ export default function FloatingChatButton({ onPress }: FloatingChatButtonProps)
             ...allMessages,
             { 
               role: 'user', 
-              content: `Tool execution completed: ${message.toolCall!.name}\nResult: ${JSON.stringify(result, null, 2)}\n\nPlease provide a summary or explanation of what you found.`
+              content: `Tool execution completed: ${message.toolCall!.name}\nResult: ${JSON.stringify(result, null, 2)}\n\nPlease provide a helpful summary or explanation of what was found.`
             }
           ];
 
           // Send to AI and handle response
           (async () => {
-            // Set loading state at the start of the AI request
             setIsLoading(true);
             scrollToEnd();
             
@@ -276,12 +289,12 @@ export default function FloatingChatButton({ onPress }: FloatingChatButtonProps)
                 max_tokens: 500
               });
 
+              // 第三个气泡：工具执行后AI的回应
               const aiSummary: Message = {
                 id: (Date.now() + 2).toString(),
                 text: aiResponse.choices[0].message.content || 'Tool executed successfully.',
                 isUser: false,
               };
-              // Add the AI response
               setMessages(prev => [...prev, aiSummary]);
               scrollToEnd();
             } catch (aiError) {
@@ -394,7 +407,13 @@ export default function FloatingChatButton({ onPress }: FloatingChatButtonProps)
               ref={flatListRef}
               renderItem={({ item, index }) => (
                 <View>
-                  {item.isToolCall ? (
+                  {item.isAIExplanation ? (
+                    <View style={[styles.messageContainer, styles.aiMessage]}>
+                      <Text style={[styles.messageText, styles.aiMessageText, { fontStyle: 'italic' }]}>
+                        💭 {item.text}
+                      </Text>
+                    </View>
+                  ) : item.isToolCall ? (
                     <View style={styles.toolCallContainer}>
                       {(() => {
                         const prefix = item.toolCall?.isExecuting
@@ -403,8 +422,8 @@ export default function FloatingChatButton({ onPress }: FloatingChatButtonProps)
                             ? '❌ '
                             : item.toolCall?.result
                               ? '✅ '
-                              : '';
-                        const title = item.text || item.toolCall?.name || 'Tool action';
+                              : '⚙️ ';
+                        const title = item.toolCall?.name || 'Tool action';
                         const headerText = `${prefix}${title}`;
                         return (
                           <TouchableOpacity 
