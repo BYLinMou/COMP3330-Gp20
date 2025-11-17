@@ -219,9 +219,9 @@ async function analyzeReceiptWithMultimodalLLM(
       throw new Error('OpenAI is not configured. Please go to Settings and configure your API.');
     }
 
-    const { apiUrl, apiKey, primaryModel } = config;
+    const { apiUrl, apiKey, receiptModel } = config;
     
-    console.log('[Receipt Processor] Using model:', primaryModel);
+    console.log('[Receipt Processor] Using model:', receiptModel);
     console.log('[Receipt Processor] API URL:', apiUrl);
 
     // 构建 API 请求
@@ -301,7 +301,7 @@ Output NOTHING but the JSON object. No markdown formatting, no backticks, no exp
 If you cannot extract information, use sensible defaults or empty values.`;
 
     const requestBody = {
-      model: primaryModel,
+      model: receiptModel,
       messages: [
         {
           role: 'system',

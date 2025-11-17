@@ -48,15 +48,19 @@ export default function SettingsScreen() {
   const [openaiKey, setOpenaiKey] = useState('');
   const [showApiKey, setShowApiKey] = useState(false);
   const [availableModels, setAvailableModels] = useState<OpenAIModel[]>([]);
-  const [primaryModel, setPrimaryModel] = useState('');
+  const [receiptModel, setReceiptModel] = useState('');
+  const [chatModel, setChatModel] = useState('');
   const [fallbackModel, setFallbackModel] = useState('');
   const [loadingModels, setLoadingModels] = useState(false);
   const [showModelSelection, setShowModelSelection] = useState(false);
-  const [showPrimaryModelModal, setShowPrimaryModelModal] = useState(false);
+  const [showReceiptModelModal, setShowReceiptModelModal] = useState(false);
+  const [showChatModelModal, setShowChatModelModal] = useState(false);
   const [showFallbackModelModal, setShowFallbackModelModal] = useState(false);
-  const [primaryModelSearch, setPrimaryModelSearch] = useState('');
+  const [receiptModelSearch, setReceiptModelSearch] = useState('');
+  const [chatModelSearch, setChatModelSearch] = useState('');
   const [fallbackModelSearch, setFallbackModelSearch] = useState('');
-  const [primarySearchFocused, setPrimarySearchFocused] = useState(false);
+  const [receiptSearchFocused, setReceiptSearchFocused] = useState(false);
+  const [chatSearchFocused, setChatSearchFocused] = useState(false);
   const [fallbackSearchFocused, setFallbackSearchFocused] = useState(false);
 
   // Categories state
@@ -87,7 +91,7 @@ export default function SettingsScreen() {
       setShowModelSelection(false);
     } else {
       // Check if models are empty and no previously selected models
-      if (availableModels.length === 0 && !primaryModel && !fallbackModel) {
+      if (availableModels.length === 0 && !receiptModel && !chatModel && !fallbackModel) {
         Alert.alert(
           'No Models Available',
           'You need to fetch the available models first. Would you like to fetch them now?',
@@ -179,7 +183,8 @@ export default function SettingsScreen() {
       if (config) {
         setOpenaiUrl(config.apiUrl);
         setOpenaiKey(config.apiKey);
-        setPrimaryModel(config.primaryModel);
+        setReceiptModel(config.receiptModel);
+        setChatModel(config.chatModel);
         setFallbackModel(config.fallbackModel);
       }
     } catch (error) {
@@ -294,8 +299,13 @@ export default function SettingsScreen() {
       return;
     }
 
-    if (!primaryModel) {
-      Alert.alert('Validation Error', 'Please select a primary model');
+    if (!receiptModel) {
+      Alert.alert('Validation Error', 'Please select a receipt model');
+      return;
+    }
+
+    if (!chatModel) {
+      Alert.alert('Validation Error', 'Please select a chat model');
       return;
     }
 
@@ -303,7 +313,8 @@ export default function SettingsScreen() {
       const config: OpenAIConfig = {
         apiUrl: openaiUrl,
         apiKey: openaiKey,
-        primaryModel: primaryModel,
+        receiptModel: receiptModel,
+        chatModel: chatModel,
         fallbackModel: fallbackModel,
       };
 
@@ -492,12 +503,12 @@ export default function SettingsScreen() {
                       size={20} 
                       color={Colors.primary} 
                     />
-                    <Text style={styles.collapsibleHeaderTitle}>AI Model Selection</Text>
+                    <Text style={styles.collapsibleHeaderTitle}>Primary Models & Fallback</Text>
                   </View>
-                  {(primaryModel || fallbackModel) && (
+                  {(receiptModel || chatModel || fallbackModel) && (
                     <View style={styles.modelIndicator}>
                       <Text style={styles.modelIndicatorText}>
-                        {primaryModel ? '1' : ''}{fallbackModel ? '+1' : ''}
+                        {receiptModel ? '1' : ''}{chatModel ? '+1' : ''}{fallbackModel ? '+1' : ''}
                       </Text>
                     </View>
                   )}
@@ -517,27 +528,44 @@ export default function SettingsScreen() {
                     </View>
 
                     {/* Model Selection UI - Always show if we have models or previously selected models */}
-                    {(availableModels.length > 0 || primaryModel || fallbackModel) && (
+                    {(availableModels.length > 0 || receiptModel || chatModel || fallbackModel) && (
                       <>
                         <View style={[styles.inputGroup, {paddingVertical: 8, paddingHorizontal: 10}]}> 
                           <Text style={styles.inputLabel}>
-                            Primary Model <Text style={styles.required}>*</Text>
+                            Receipt Model <Text style={styles.required}>*</Text>
                           </Text>
                           <TouchableOpacity 
                             style={styles.selectInput}
-                            onPress={() => availableModels.length > 0 && setShowPrimaryModelModal(true)}
+                            onPress={() => availableModels.length > 0 && setShowReceiptModelModal(true)}
                             disabled={availableModels.length === 0}
                           >
-                            <Text style={primaryModel ? styles.selectText : styles.selectPlaceholder}>
-                              {primaryModel || (availableModels.length === 0 ? 'Fetch models first' : 'Select primary model')}
+                            <Text style={receiptModel ? styles.selectText : styles.selectPlaceholder}>
+                              {receiptModel || (availableModels.length === 0 ? 'Fetch models first' : 'Select receipt model')}
                             </Text>
                             <Ionicons name="chevron-down" size={20} color={Colors.textSecondary} />
                           </TouchableOpacity>
-                          {/* Removed 'Currently selected' helper text for primary model */}
+                          <Text style={styles.helperText}>Primary model for receipt processing</Text>
+                        </View>
+
+                        <View style={[styles.inputGroup, {paddingVertical: 8, paddingHorizontal: 10}]}> 
+                          <Text style={styles.inputLabel}>
+                            Chat Model <Text style={styles.required}>*</Text>
+                          </Text>
+                          <TouchableOpacity 
+                            style={styles.selectInput}
+                            onPress={() => availableModels.length > 0 && setShowChatModelModal(true)}
+                            disabled={availableModels.length === 0}
+                          >
+                            <Text style={chatModel ? styles.selectText : styles.selectPlaceholder}>
+                              {chatModel || (availableModels.length === 0 ? 'Fetch models first' : 'Select chat model')}
+                            </Text>
+                            <Ionicons name="chevron-down" size={20} color={Colors.textSecondary} />
+                          </TouchableOpacity>
+                          <Text style={styles.helperText}>Primary model for chat & AI features</Text>
                         </View>
 
                         <View style={[styles.inputGroup, {paddingVertical: 8, paddingHorizontal: 8}]}> 
-                          <Text style={styles.inputLabel}>Fallback Model (Optional)</Text>
+                          <Text style={styles.inputLabel}>Fallback Model</Text>
                           <TouchableOpacity 
                             style={styles.selectInput}
                             onPress={() => availableModels.length > 0 && setShowFallbackModelModal(true)}
@@ -548,12 +576,12 @@ export default function SettingsScreen() {
                             </Text>
                             <Ionicons name="chevron-down" size={20} color={Colors.textSecondary} />
                           </TouchableOpacity>
-                          {/* Removed 'Currently selected' helper text for fallback model */}
+                          <Text style={styles.helperText}>Optional backup model for both features</Text>
                         </View>
                       </>
                     )}
 
-                    {availableModels.length === 0 && !primaryModel && !fallbackModel && !loadingModels && (
+                    {availableModels.length === 0 && !receiptModel && !chatModel && !fallbackModel && !loadingModels && (
                       <View style={styles.infoBox}>
                         <Ionicons name="information-circle-outline" size={20} color={Colors.primary} />
                         <Text style={styles.infoText}>
@@ -878,23 +906,23 @@ export default function SettingsScreen() {
         <View style={{ height: 20 }} />
       </ScrollView>
 
-      {/* Primary Model Selection Modal */}
+      {/* Receipt Model Selection Modal */}
       <Modal
-        visible={showPrimaryModelModal}
+        visible={showReceiptModelModal}
         transparent
         animationType="slide"
         onRequestClose={() => {
           // Only close if search input is not focused
-          if (!primarySearchFocused) {
-            setShowPrimaryModelModal(false);
+          if (!receiptSearchFocused) {
+            setShowReceiptModelModal(false);
           }
         }}
       >
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <View style={styles.modelSelectionModalHeader}>
-              <Text style={styles.modalTitle}>Select Primary Model</Text>
-              <TouchableOpacity onPress={() => setShowPrimaryModelModal(false)}>
+              <Text style={styles.modalTitle}>Select Receipt Model</Text>
+              <TouchableOpacity onPress={() => setShowReceiptModelModal(false)}>
                 <Ionicons name="close" size={24} color={Colors.textPrimary} />
               </TouchableOpacity>
             </View>
@@ -905,14 +933,14 @@ export default function SettingsScreen() {
               <TextInput
                 style={styles.modalSearchInput}
                 placeholder="Search models..."
-                value={primaryModelSearch}
-                onChangeText={setPrimaryModelSearch}
-                onFocus={() => setPrimarySearchFocused(true)}
-                onBlur={() => setPrimarySearchFocused(false)}
+                value={receiptModelSearch}
+                onChangeText={setReceiptModelSearch}
+                onFocus={() => setReceiptSearchFocused(true)}
+                onBlur={() => setReceiptSearchFocused(false)}
                 placeholderTextColor={Colors.textSecondary}
               />
-              {primaryModelSearch !== '' && (
-                <TouchableOpacity onPress={() => setPrimaryModelSearch('')}>
+              {receiptModelSearch !== '' && (
+                <TouchableOpacity onPress={() => setReceiptModelSearch('')}>
                   <Ionicons name="close-circle" size={20} color={Colors.textSecondary} />
                 </TouchableOpacity>
               )}
@@ -921,26 +949,26 @@ export default function SettingsScreen() {
             <ScrollView style={styles.modalList}>
               {availableModels
                 .filter(model => 
-                  model.id.toLowerCase().includes(primaryModelSearch.toLowerCase()) ||
-                  model.owned_by.toLowerCase().includes(primaryModelSearch.toLowerCase())
+                  model.id.toLowerCase().includes(receiptModelSearch.toLowerCase()) ||
+                  model.owned_by.toLowerCase().includes(receiptModelSearch.toLowerCase())
                 )
                 .map((model) => (
                 <TouchableOpacity
                   key={model.id}
                   style={[
                     styles.modalItem,
-                    primaryModel === model.id && styles.modalItemSelected
+                    receiptModel === model.id && styles.modalItemSelected
                   ]}
                   onPress={() => {
-                    setPrimaryModel(model.id);
-                    setShowPrimaryModelModal(false);
-                    setPrimaryModelSearch('');
+                    setReceiptModel(model.id);
+                    setShowReceiptModelModal(false);
+                    setReceiptModelSearch('');
                   }}
                 >
                   <View style={styles.modalItemLeft}>
                     <Text style={[
                       styles.modalItemText,
-                      primaryModel === model.id && styles.modalItemTextSelected
+                      receiptModel === model.id && styles.modalItemTextSelected
                     ]}>
                       {model.id}
                     </Text>
@@ -948,14 +976,104 @@ export default function SettingsScreen() {
                       {model.owned_by}
                     </Text>
                   </View>
-                  {primaryModel === model.id && (
+                  {receiptModel === model.id && (
                     <Ionicons name="checkmark" size={20} color={Colors.primary} />
                   )}
                 </TouchableOpacity>
               ))}
               {availableModels.filter(model => 
-                model.id.toLowerCase().includes(primaryModelSearch.toLowerCase()) ||
-                model.owned_by.toLowerCase().includes(primaryModelSearch.toLowerCase())
+                model.id.toLowerCase().includes(receiptModelSearch.toLowerCase()) ||
+                model.owned_by.toLowerCase().includes(receiptModelSearch.toLowerCase())
+              ).length === 0 && (
+                <View style={styles.emptySearchContainer}>
+                  <Ionicons name="search-outline" size={32} color={Colors.textSecondary} />
+                  <Text style={styles.emptySearchText}>No models found</Text>
+                  <Text style={styles.emptySearchSubtext}>Try searching with different keywords</Text>
+                </View>
+              )}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Chat Model Selection Modal */}
+      <Modal
+        visible={showChatModelModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => {
+          // Only close if search input is not focused
+          if (!chatSearchFocused) {
+            setShowChatModelModal(false);
+          }
+        }}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modelSelectionModalHeader}>
+              <Text style={styles.modalTitle}>Select Chat Model</Text>
+              <TouchableOpacity onPress={() => setShowChatModelModal(false)}>
+                <Ionicons name="close" size={24} color={Colors.textPrimary} />
+              </TouchableOpacity>
+            </View>
+            
+            {/* Search Input */}
+            <View style={styles.modalSearchContainer}>
+              <Ionicons name="search-outline" size={20} color={Colors.textSecondary} />
+              <TextInput
+                style={styles.modalSearchInput}
+                placeholder="Search models..."
+                value={chatModelSearch}
+                onChangeText={setChatModelSearch}
+                onFocus={() => setChatSearchFocused(true)}
+                onBlur={() => setChatSearchFocused(false)}
+                placeholderTextColor={Colors.textSecondary}
+              />
+              {chatModelSearch !== '' && (
+                <TouchableOpacity onPress={() => setChatModelSearch('')}>
+                  <Ionicons name="close-circle" size={20} color={Colors.textSecondary} />
+                </TouchableOpacity>
+              )}
+            </View>
+            
+            <ScrollView style={styles.modalList}>
+              {availableModels
+                .filter(model => 
+                  model.id.toLowerCase().includes(chatModelSearch.toLowerCase()) ||
+                  model.owned_by.toLowerCase().includes(chatModelSearch.toLowerCase())
+                )
+                .map((model) => (
+                <TouchableOpacity
+                  key={model.id}
+                  style={[
+                    styles.modalItem,
+                    chatModel === model.id && styles.modalItemSelected
+                  ]}
+                  onPress={() => {
+                    setChatModel(model.id);
+                    setShowChatModelModal(false);
+                    setChatModelSearch('');
+                  }}
+                >
+                  <View style={styles.modalItemLeft}>
+                    <Text style={[
+                      styles.modalItemText,
+                      chatModel === model.id && styles.modalItemTextSelected
+                    ]}>
+                      {model.id}
+                    </Text>
+                    <Text style={styles.modalItemSubtext}>
+                      {model.owned_by}
+                    </Text>
+                  </View>
+                  {chatModel === model.id && (
+                    <Ionicons name="checkmark" size={20} color={Colors.primary} />
+                  )}
+                </TouchableOpacity>
+              ))}
+              {availableModels.filter(model => 
+                model.id.toLowerCase().includes(chatModelSearch.toLowerCase()) ||
+                model.owned_by.toLowerCase().includes(chatModelSearch.toLowerCase())
               ).length === 0 && (
                 <View style={styles.emptySearchContainer}>
                   <Ionicons name="search-outline" size={32} color={Colors.textSecondary} />
@@ -1035,7 +1153,7 @@ export default function SettingsScreen() {
               
               {availableModels
                 .filter(model => 
-                  model.id !== primaryModel &&
+                  model.id !== receiptModel && model.id !== chatModel &&
                   (model.id.toLowerCase().includes(fallbackModelSearch.toLowerCase()) ||
                    model.owned_by.toLowerCase().includes(fallbackModelSearch.toLowerCase()))
                 )
@@ -1069,7 +1187,7 @@ export default function SettingsScreen() {
                   </TouchableOpacity>
                 ))}
               {availableModels.filter(model => 
-                model.id !== primaryModel &&
+                model.id !== receiptModel && model.id !== chatModel &&
                 (model.id.toLowerCase().includes(fallbackModelSearch.toLowerCase()) ||
                  model.owned_by.toLowerCase().includes(fallbackModelSearch.toLowerCase()))
               ).length === 0 && fallbackModelSearch !== '' && (
