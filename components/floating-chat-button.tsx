@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { TouchableOpacity, StyleSheet, View, Modal, TextInput, FlatList, Text, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Colors } from '../constants/theme';
 import { sendChatCompletion, ChatMessage } from '../src/services/openai-client';
 import { allTools, SYSTEM_PROMPT, Tool } from '../src/services/chat-tools';
@@ -45,6 +46,40 @@ export default function FloatingChatButton({ onPress }: FloatingChatButtonProps)
   const [typingDots, setTypingDots] = useState('');
   const textInputRef = useRef<TextInput>(null);
   const flatListRef = useRef<FlatList>(null);
+  const isLoadingMessages = useRef(false);
+
+  // Load messages from AsyncStorage on component mount
+  useEffect(() => {
+    const loadMessages = async () => {
+      try {
+        isLoadingMessages.current = true;
+        const storedMessages = await AsyncStorage.getItem('chatMessages');
+        if (storedMessages) {
+          const parsedMessages = JSON.parse(storedMessages);
+          setMessages(parsedMessages);
+        }
+      } catch (error) {
+        console.error('Error loading chat messages:', error);
+      } finally {
+        isLoadingMessages.current = false;
+      }
+    };
+    loadMessages();
+  }, []);
+
+  // Save messages to AsyncStorage whenever messages change
+  useEffect(() => {
+    if (!isLoadingMessages.current) {
+      const saveMessages = async () => {
+        try {
+          await AsyncStorage.setItem('chatMessages', JSON.stringify(messages));
+        } catch (error) {
+          console.error('Error saving chat messages:', error);
+        }
+      };
+      saveMessages();
+    }
+  }, [messages]);
 
   useEffect(() => {
     let interval: number;
@@ -87,7 +122,8 @@ export default function FloatingChatButton({ onPress }: FloatingChatButtonProps)
         text: inputText,
         isUser: true,
       };
-      setMessages(prev => [...prev, userMessage]);
+      const updatedMessages = [...messages, userMessage];
+      setMessages(updatedMessages);
       setInputText('');
       setIsLoading(true);
       scrollToEnd();
@@ -96,7 +132,7 @@ export default function FloatingChatButton({ onPress }: FloatingChatButtonProps)
         // Prepare messages for AI
         const chatMessages: ChatMessage[] = [
           { role: 'system', content: SYSTEM_PROMPT },
-          ...messages.map(m => ({
+          ...updatedMessages.map(m => ({
             role: m.isUser ? 'user' as const : 'assistant' as const,
             content: m.isToolCall ? `Tool call: ${m.toolCall?.name}` : m.text
           })),
@@ -289,9 +325,14 @@ export default function FloatingChatButton({ onPress }: FloatingChatButtonProps)
     setModalVisible(false);
   };
 
-  const clearHistory = () => {
+  const clearHistory = async () => {
     setMessages([]);
     setInputText('');
+    try {
+      await AsyncStorage.removeItem('chatMessages');
+    } catch (error) {
+      console.error('Error clearing chat messages:', error);
+    }
   };
 
   const cancelToolCall = (messageId: string) => {
