@@ -41,7 +41,7 @@ export default function HomeScreen() {
   const [balance, setBalance] = useState(0);
   const [income, setIncome] = useState(0);
   const [spent, setSpent] = useState(0);
-  const [transactionLimit, setTransactionLimit] = useState(10);
+  const [transactionLimit, setTransactionLimit] = useState(5);
   const [showLimitDropdown, setShowLimitDropdown] = useState(false);
   const [expandedTransactionId, setExpandedTransactionId] = useState<string | null>(null);
   const [pressedTransactionId, setPressedTransactionId] = useState<string | null>(null);
@@ -203,35 +203,35 @@ export default function HomeScreen() {
                   color={Colors.primary} 
                 />
               </TouchableOpacity>
-              
-              {showLimitDropdown && (
-                <View style={styles.dropdownMenu}>
-                  {limitOptions.map((option) => (
-                    <TouchableOpacity
-                      key={option}
-                      style={[
-                        styles.dropdownOption,
-                        transactionLimit === option && styles.dropdownOptionSelected,
-                      ]}
-                      onPress={() => {
-                        setTransactionLimit(option);
-                        setShowLimitDropdown(false);
-                      }}
-                    >
-                      <Text
-                        style={[
-                          styles.dropdownOptionText,
-                          transactionLimit === option && styles.dropdownOptionTextSelected,
-                        ]}
-                      >
-                        {option}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              )}
             </View>
           </View>
+          
+          {showLimitDropdown && (
+            <View style={styles.dropdownMenu}>
+              {limitOptions.map((option) => (
+                <TouchableOpacity
+                  key={option}
+                  style={[
+                    styles.dropdownOption,
+                    transactionLimit === option && styles.dropdownOptionSelected,
+                  ]}
+                  onPress={() => {
+                    setTransactionLimit(option);
+                    setShowLimitDropdown(false);
+                  }}
+                >
+                  <Text
+                    style={[
+                      styles.dropdownOptionText,
+                      transactionLimit === option && styles.dropdownOptionTextSelected,
+                    ]}
+                  >
+                    {option}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
           {loading ? (
             <View style={styles.loadingContainer}>
               <ActivityIndicator size="large" color={Colors.primary} />
@@ -534,6 +534,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.05,
     shadowRadius: 8,
     elevation: 2,
+    overflow: 'visible',
   },
   cardHeader: {
     flexDirection: 'row',
@@ -765,6 +766,7 @@ const styles = StyleSheet.create({
   },
   dropdownContainer: {
     position: 'relative',
+    zIndex: 1000,
   },
   dropdownButton: {
     flexDirection: 'row',
@@ -788,13 +790,13 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     borderWidth: 1,
     borderColor: Colors.gray200,
-    zIndex: 1000,
+    zIndex: 10000,
     minWidth: 80,
     shadowColor: Colors.black,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
-    elevation: 5,
+    elevation: 10,
   },
   dropdownOption: {
     paddingHorizontal: 12,
