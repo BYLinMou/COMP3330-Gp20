@@ -30,6 +30,7 @@ export default function AddScreen() {
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [notes, setNotes] = useState('');
   const [selectedCurrency, setSelectedCurrency] = useState('');
+  const [userOverrodeAmount, setUserOverrodeAmount] = useState(false);
   
   // Categories and loading states
   const [categories, setCategories] = useState<Category[]>([]);
@@ -56,11 +57,18 @@ export default function AddScreen() {
     { label: '$45 Groceries', amount: 45 },
   ];
 
-  // Auto-calculate amount from itemlist
+  // Auto-calculate amount from itemlist (only if user hasn't manually overridden)
   useEffect(() => {
-    if (itemlist.length > 0) {
+    if (itemlist.length > 0 && !userOverrodeAmount) {
       const total = itemlist.reduce((sum, item) => sum + (item.price * item.amount), 0);
       setAmount(total.toFixed(2));
+    }
+  }, [itemlist, userOverrodeAmount]);
+
+  // Reset override flag when itemlist becomes empty
+  useEffect(() => {
+    if (itemlist.length === 0) {
+      setUserOverrodeAmount(false);
     }
   }, [itemlist]);
 
@@ -402,6 +410,7 @@ export default function AddScreen() {
             setMerchant('');
             setNotes('');
             setSelectedDate(new Date());
+            setUserOverrodeAmount(false);
           },
         },
       ]);
@@ -610,8 +619,12 @@ export default function AddScreen() {
                 placeholder="0.00"
                 keyboardType="decimal-pad"
                 value={amount}
-                onChangeText={setAmount}
-                editable={itemlist.length === 0} // Read-only if items present
+                onChangeText={(text) => {
+                  setAmount(text);
+                  if (itemlist.length > 0) {
+                    setUserOverrodeAmount(true);
+                  }
+                }}
               />
             </View>
             <Text style={styles.currencySubtext}>
@@ -766,7 +779,7 @@ export default function AddScreen() {
                 />
                 <View style={[styles.itemInputSmall, styles.itemTotal]}>
                   <Text style={styles.itemTotalText}>
-                    ${(item.amount * item.price).toFixed(2)}
+                    {selectedCurrency ? currencyOptions.find(c => c.code === selectedCurrency)?.symbol : '$'}{(item.amount * item.price).toFixed(2)}
                   </Text>
                 </View>
                 <TouchableOpacity
