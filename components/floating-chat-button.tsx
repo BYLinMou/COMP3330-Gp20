@@ -117,7 +117,7 @@ export default function FloatingChatButton({ onPress }: FloatingChatButtonProps)
       // Scroll to bottom when modal opens
       setTimeout(() => {
         flatListRef.current?.scrollToEnd({ animated: false });
-      }, 100);
+      }, 200);
     }
   };
 

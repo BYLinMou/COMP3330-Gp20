@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, ScrollView, StyleSheet, Dimensions, ActivityIndicator, TouchableOpacity, Modal, Alert } from 'react-native';
+import { View, Text, StyleSheet, Dimensions, ActivityIndicator, TouchableOpacity, Modal, Alert, Pressable, Animated } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../constants/theme';
+import { RefreshableScrollView } from '../../components/refreshable-scroll-view';
 import { 
   getRecentTransactions, 
   getIncomeAndExpenses,
@@ -35,6 +36,7 @@ function getRelativeTime(dateString: string): string {
 export default function HomeScreen() {
   const { session } = useAuth();
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [recentTransactions, setRecentTransactions] = useState<Transaction[]>([]);
   const [balance, setBalance] = useState(0);
   const [income, setIncome] = useState(0);
@@ -42,6 +44,8 @@ export default function HomeScreen() {
   const [transactionLimit, setTransactionLimit] = useState(10);
   const [showLimitDropdown, setShowLimitDropdown] = useState(false);
   const [expandedTransactionId, setExpandedTransactionId] = useState<string | null>(null);
+  const [pressedTransactionId, setPressedTransactionId] = useState<string | null>(null);
+  const blurAnimRef = React.useRef<{ [key: string]: Animated.Value }>({});
 
   const budget = 2000; // This could also come from Supabase
   const budgetUsed = Math.round((spent / budget) * 100);
@@ -103,9 +107,41 @@ export default function HomeScreen() {
     }
   }
 
+  async function onRefresh() {
+    setRefreshing(true);
+    try {
+      // Get current month date range
+      const now = new Date();
+      const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
+      const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+      
+      const startDate = firstDay.toISOString().split('T')[0];
+      const endDate = lastDay.toISOString().split('T')[0];
+
+      // Fetch all data in parallel
+      const [transactions, stats] = await Promise.all([
+        getRecentTransactions(transactionLimit),
+        getIncomeAndExpenses(startDate, endDate),
+      ]);
+
+      setRecentTransactions(transactions);
+      setIncome(stats.income);
+      setSpent(stats.expenses);
+      setBalance(stats.balance);
+    } catch (error) {
+      console.error('Error refreshing dashboard data:', error);
+    } finally {
+      setRefreshing(false);
+    }
+  }
+
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+      <RefreshableScrollView
+        style={styles.content}
+        refreshing={refreshing}
+        onRefresh={onRefresh}
+      >
         {/* Balance Card */}
         <LinearGradient
           colors={[Colors.gradientStart, Colors.gradientEnd]}
@@ -206,40 +242,100 @@ export default function HomeScreen() {
               <Text style={styles.emptyText}>No transactions yet</Text>
             </View>
           ) : (
-            recentTransactions.map((transaction) => (
-              <TouchableOpacity
-                key={transaction.id}
-                onPress={() => {
-                  if (expandedTransactionId === transaction.id) {
-                    setExpandedTransactionId(null);
-                  } else {
-                    setExpandedTransactionId(transaction.id);
-                  }
-                }}
-              >
-                <View style={styles.transactionItem}>
-                  <View style={styles.transactionLeft}>
-                    <Text style={styles.transactionName}>
-                      {transaction.merchant || 'Transaction'}
-                    </Text>
-                    <Text style={styles.transactionTime}>
-                      {getRelativeTime(transaction.occurred_at)}
-                    </Text>
-                  </View>
-                  <View style={styles.transactionRight}>
-                    <Text
-                      style={[
-                        styles.transactionAmount,
-                        transaction.amount > 0 ? styles.incomeAmount : styles.expenseAmount,
-                      ]}
-                    >
-                      {transaction.amount > 0 ? '+' : ''}${Math.abs(transaction.amount).toFixed(2)}
-                    </Text>
-                    <Text style={styles.transactionCategory}>
-                      {transaction.category?.name || 'Uncategorized'}
-                    </Text>
-                  </View>
-                </View>
+            recentTransactions.map((transaction) => {
+              if (!blurAnimRef.current[transaction.id]) {
+                blurAnimRef.current[transaction.id] = new Animated.Value(0);
+              }
+              const blurAnim = blurAnimRef.current[transaction.id];
+              
+              return (
+                <Pressable
+                  key={transaction.id}
+                  onPress={() => {
+                    if (expandedTransactionId === transaction.id) {
+                      setExpandedTransactionId(null);
+                    } else {
+                      setExpandedTransactionId(transaction.id);
+                    }
+                  }}
+                  onPressIn={() => {
+                    setPressedTransactionId(transaction.id);
+                    Animated.timing(blurAnim, {
+                      toValue: 1,
+                      duration: 150,
+                      useNativeDriver: false,
+                    }).start();
+                  }}
+                  onPressOut={() => {
+                    setPressedTransactionId(null);
+                    Animated.timing(blurAnim, {
+                      toValue: 0,
+                      duration: 150,
+                      useNativeDriver: false,
+                    }).start();
+                  }}
+                >
+                  <Animated.View style={[
+                    styles.transactionItem,
+                    {
+                      opacity: blurAnim.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [1, 0.5],
+                      }),
+                    }
+                  ]}>
+                    <View style={styles.transactionLeft}>
+                      <Animated.Text style={[
+                        styles.transactionName,
+                        {
+                          letterSpacing: blurAnim.interpolate({
+                            inputRange: [0, 1],
+                            outputRange: [0, 0.5],
+                          }),
+                        }
+                      ]}>
+                        {transaction.merchant || 'Transaction'}
+                      </Animated.Text>
+                      <Animated.Text style={[
+                        styles.transactionTime,
+                        {
+                          letterSpacing: blurAnim.interpolate({
+                            inputRange: [0, 1],
+                            outputRange: [0, 0.5],
+                          }),
+                        }
+                      ]}>
+                        {getRelativeTime(transaction.occurred_at)}
+                      </Animated.Text>
+                    </View>
+                    <View style={styles.transactionRight}>
+                      <Animated.Text
+                        style={[
+                          styles.transactionAmount,
+                          transaction.amount > 0 ? styles.incomeAmount : styles.expenseAmount,
+                          {
+                            letterSpacing: blurAnim.interpolate({
+                              inputRange: [0, 1],
+                              outputRange: [0, 0.5],
+                            }),
+                          }
+                        ]}
+                      >
+                        {transaction.amount > 0 ? '+' : ''}${Math.abs(transaction.amount).toFixed(2)}
+                      </Animated.Text>
+                      <Animated.Text style={[
+                        styles.transactionCategory,
+                        {
+                          letterSpacing: blurAnim.interpolate({
+                            inputRange: [0, 1],
+                            outputRange: [0, 0.5],
+                          }),
+                        }
+                      ]}>
+                        {transaction.category?.name || 'Uncategorized'}
+                      </Animated.Text>
+                    </View>
+                  </Animated.View>
 
                 {expandedTransactionId === transaction.id && (
                   <View style={styles.transactionExpandedDetails}>
@@ -362,13 +458,14 @@ export default function HomeScreen() {
                     </TouchableOpacity>
                   </View>
                 )}
-              </TouchableOpacity>
-            ))
+              </Pressable>
+              );
+            })
           )}
         </View>
 
         <View style={{ height: 20 }} />
-      </ScrollView>
+      </RefreshableScrollView>
 
       {/* Floating Chat Button */}
       <FloatingChatButton />

@@ -1,18 +1,27 @@
-import React from 'react';
-import { View, Text, ScrollView, StyleSheet, TouchableOpacity } from 'react-native';
+import React, { useState } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, Gradients } from '../../constants/theme';
+import { RefreshableScrollView } from '../../components/refreshable-scroll-view';
 import FloatingChatButton from '../../components/floating-chat-button';
 
 export default function PetScreen() {
+  const [refreshing, setRefreshing] = useState(false);
   const happiness = 85;
   const energy = 70;
   const levelProgress = 245;
   const levelMax = 300;
   const dailyStreak = 7;
   const lastFed = '8h ago';
+
+  async function onRefresh() {
+    setRefreshing(true);
+    // Simulate data refresh
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    setRefreshing(false);
+  }
 
   const outfits = [
     { id: 1, name: 'Casual', xp: 0, unlocked: true, wearing: true },
@@ -24,7 +33,11 @@ export default function PetScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+      <RefreshableScrollView 
+        style={styles.content}
+        refreshing={refreshing}
+        onRefresh={onRefresh}
+      >
         {/* Pet Speech Bubble */}
         <View style={styles.speechBubbleContainer}>
           <LinearGradient
@@ -160,7 +173,7 @@ export default function PetScreen() {
         </View>
 
         <View style={{ height: 20 }} />
-      </ScrollView>
+      </RefreshableScrollView>
 
       {/* Floating Chat Button */}
       <FloatingChatButton />

@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, ScrollView, StyleSheet, TouchableOpacity, Dimensions, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Dimensions, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../constants/theme';
+import { RefreshableScrollView } from '../../components/refreshable-scroll-view';
 import { 
   getSpendingBreakdown,
   type Transaction 
@@ -19,6 +20,7 @@ export default function ReportsScreen() {
   const { session } = useAuth();
   const [activeTab, setActiveTab] = useState<TabType>('trends');
   const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [spendingData, setSpendingData] = useState<Array<{
     category: string;
     amount: number;
@@ -79,9 +81,41 @@ export default function ReportsScreen() {
     }
   }
 
+  async function onRefresh() {
+    setRefreshing(true);
+    try {
+      const now = new Date();
+      const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
+      const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+      
+      const startDate = firstDay.toISOString().split('T')[0];
+      const endDate = lastDay.toISOString().split('T')[0];
+
+      const breakdown = await getSpendingBreakdown(startDate, endDate);
+      
+      const total = Object.values(breakdown).reduce<number>((sum, val) => sum + (val as number), 0);
+      const chartData = Object.entries(breakdown).map(([category, amount]) => ({
+        category,
+        amount: amount as number,
+        color: categoryColors[category] || Colors.chartPurple,
+        percentage: Math.round(((amount as number) / total) * 100),
+      }));
+      
+      setSpendingData(chartData);
+    } catch (error) {
+      console.error('Error refreshing spending data:', error);
+    } finally {
+      setRefreshing(false);
+    }
+  }
+
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+      <RefreshableScrollView 
+        style={styles.content}
+        refreshing={refreshing}
+        onRefresh={onRefresh}
+      >
         {/* Income and Spent Cards */}
         <View style={styles.summaryCards}>
           <View style={[styles.summaryCard, styles.incomeCard]}>
@@ -315,7 +349,7 @@ export default function ReportsScreen() {
         )}
 
         <View style={{ height: 20 }} />
-      </ScrollView>
+      </RefreshableScrollView>
 
       {/* Floating Chat Button */}
       <FloatingChatButton />

@@ -5,6 +5,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import Constants from 'expo-constants';
 import { Colors } from '../../constants/theme';
+import { RefreshableScrollView } from '../../components/refreshable-scroll-view';
 import { supabase } from '../../src/services/supabase';
 import { useAuth } from '../../src/providers/AuthProvider';
 import { 
@@ -34,6 +35,7 @@ export default function SettingsScreen() {
   const [currency, setCurrency] = useState('USD ($)');
   const [language, setLanguage] = useState('English');
   const [monthlyBudget, setMonthlyBudget] = useState('2000');
+  const [refreshing, setRefreshing] = useState(false);
 
   const [budgetAlerts, setBudgetAlerts] = useState(true);
   const [dailyReminders, setDailyReminders] = useState(true);
@@ -350,7 +352,29 @@ export default function SettingsScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+      <RefreshableScrollView 
+        style={styles.content} 
+        keyboardShouldPersistTaps="handled"
+        refreshing={refreshing}
+        onRefresh={async () => {
+          setRefreshing(true);
+          try {
+            // Reload settings data
+            const config = await getOpenAIConfig();
+            if (config) {
+              setOpenaiUrl(config.apiUrl);
+              setReceiptModel(config.receiptModel);
+              setChatModel(config.chatModel);
+              setFallbackModel(config.fallbackModel);
+            }
+            // You can add more data fetching here if needed
+          } catch (error) {
+            console.error('Error refreshing settings:', error);
+          } finally {
+            setRefreshing(false);
+          }
+        }}
+      >
         {/* Profile Settings - Collapsible */}
         <View style={styles.card}>
           <TouchableOpacity
@@ -912,7 +936,7 @@ export default function SettingsScreen() {
         </View>
 
         <View style={{ height: 20 }} />
-      </ScrollView>
+      </RefreshableScrollView>
 
       {/* Receipt Model Selection Modal */}
       <Modal

@@ -7,6 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import * as ImagePicker from 'expo-image-picker';
 import { Colors } from '../../constants/theme';
+import { RefreshableScrollView } from '../../components/refreshable-scroll-view';
 import { addTransaction } from '../../src/services/transactions';
 import { getCategories, addCategory, subscribeToCategoryChanges, type Category } from '../../src/services/categories';
 import { getCurrencies, type Currency } from '../../src/services/currencies';
@@ -36,6 +37,7 @@ export default function AddScreen() {
   const [selectedCurrency, setSelectedCurrency] = useState('');
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState('');
   const [userOverrodeAmount, setUserOverrodeAmount] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   
   // Categories and loading states
   const [categories, setCategories] = useState<Category[]>([]);
@@ -497,7 +499,24 @@ export default function AddScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+      <RefreshableScrollView 
+        style={styles.content}
+        refreshing={refreshing}
+        onRefresh={async () => {
+          setRefreshing(true);
+          try {
+            await Promise.all([
+              loadCategories(),
+              loadCurrencies(),
+              loadPaymentMethods(),
+            ]);
+          } catch (error) {
+            console.error('Error refreshing add screen data:', error);
+          } finally {
+            setRefreshing(false);
+          }
+        }}
+      >
         {/* Debug Info - Remove in production */}
         {__DEV__ && (
           <View style={styles.debugInfo}>
@@ -988,7 +1007,7 @@ export default function AddScreen() {
         </View>
 
         <View style={{ height: 20 }} />
-      </ScrollView>
+      </RefreshableScrollView>
 
       {/* Category Selection Modal */}
       <Modal
