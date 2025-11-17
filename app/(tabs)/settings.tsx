@@ -21,6 +21,7 @@ import {
   subscribeToCategoryChanges,
   type Category,
 } from '../../src/services/categories';
+import { getCurrencies, type Currency } from '../../src/services/currencies';
 
 export default function SettingsScreen() {
   const { session } = useAuth();
@@ -62,6 +63,11 @@ export default function SettingsScreen() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [loadingCategories, setLoadingCategories] = useState(true);
   const [newCategoryName, setNewCategoryName] = useState('');
+
+  // Currency state
+  const [currencyOptions, setCurrencyOptions] = useState<Currency[]>([]);
+  const [selectedCurrency, setSelectedCurrency] = useState('USD');
+  const [showCurrencyModal, setShowCurrencyModal] = useState(false);
 
   // Collapsible section state - tracks which section is expanded, all collapsed by default
   const [expandedSection, setExpandedSection] = useState<string | null>(null);
@@ -119,6 +125,7 @@ export default function SettingsScreen() {
   // Load OpenAI config on mount
   useEffect(() => {
     loadOpenAIConfig();
+    loadCurrencies();
   }, []);
 
   // Load categories and subscribe to realtime
@@ -177,6 +184,16 @@ export default function SettingsScreen() {
       }
     } catch (error) {
       console.error('Failed to load OpenAI config:', error);
+    }
+  };
+
+  const loadCurrencies = async () => {
+    try {
+      const data = await getCurrencies();
+      setCurrencyOptions(data);
+      console.log('[Settings] Loaded currencies:', data);
+    } catch (error) {
+      console.error('Failed to load currencies:', error);
     }
   };
 
@@ -366,8 +383,15 @@ export default function SettingsScreen() {
           <View style={styles.row}>
             <View style={[styles.inputGroup, styles.halfWidth]}>
               <Text style={styles.inputLabel}>Primary Currency</Text>
-              <TouchableOpacity style={styles.selectInput}>
-                <Text style={styles.selectText}>{currency}</Text>
+              <TouchableOpacity 
+                style={styles.selectInput}
+                onPress={() => setShowCurrencyModal(true)}
+              >
+                <Text style={selectedCurrency ? styles.selectText : styles.selectPlaceholder}>
+                  {selectedCurrency 
+                    ? `${currencyOptions.find(c => c.code === selectedCurrency)?.symbol} ${selectedCurrency}`
+                    : 'Select currency'}
+                </Text>
                 <Ionicons name="chevron-down" size={20} color={Colors.textSecondary} />
               </TouchableOpacity>
             </View>
@@ -1059,6 +1083,54 @@ export default function SettingsScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* Currency Selection Modal */}
+      <Modal
+        visible={showCurrencyModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowCurrencyModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Select Currency</Text>
+              <TouchableOpacity onPress={() => setShowCurrencyModal(false)}>
+                <Ionicons name="close" size={24} color={Colors.textPrimary} />
+              </TouchableOpacity>
+            </View>
+            
+            <ScrollView style={styles.modalList}>
+              {currencyOptions.map((currency) => (
+                <TouchableOpacity
+                  key={currency.code}
+                  style={[
+                    styles.modalItem,
+                    selectedCurrency === currency.code && styles.modalItemSelected
+                  ]}
+                  onPress={() => {
+                    setSelectedCurrency(currency.code);
+                    setShowCurrencyModal(false);
+                  }}
+                >
+                  <View>
+                    <Text style={[
+                      styles.modalItemText,
+                      selectedCurrency === currency.code && styles.modalItemTextSelected
+                    ]}>
+                      {currency.symbol} {currency.code}
+                    </Text>
+                    <Text style={styles.currencySubtext}>{currency.name}</Text>
+                  </View>
+                  {selectedCurrency === currency.code && (
+                    <Ionicons name="checkmark" size={20} color={Colors.primary} />
+                  )}
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -1387,7 +1459,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 5,
+    paddingHorizontal: 16,
+    paddingVertical: 16,
     borderBottomWidth: 1,
     borderBottomColor: Colors.gray200,
   },
@@ -1563,5 +1636,11 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '500',
     color: Colors.primary,
+  },
+  currencySubtext: {
+    fontSize: 13,
+    color: Colors.textSecondary,
+    marginTop: 2,
+    marginLeft: 4,
   },
 });
