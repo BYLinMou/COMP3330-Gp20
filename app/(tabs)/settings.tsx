@@ -73,7 +73,9 @@ export default function SettingsScreen() {
     let unsub: undefined | (() => Promise<void>);
     (async () => {
       try {
-        unsub = await subscribeToCategoryChanges(() => {
+        unsub = await subscribeToCategoryChanges((change) => {
+          console.log('Category change detected:', change.eventType);
+          // Reload categories for any event (INSERT, UPDATE, DELETE)
           loadCategories();
         });
       } catch (e) {
@@ -175,16 +177,18 @@ export default function SettingsScreen() {
     console.log('Showing confirmation dialog');
 
     try {
-          console.log('Calling deleteCategory with id:', id);
-          const result = await deleteCategory(id);
-          console.log('deleteCategory returned:', result);
-          console.log('Reloading categories...');
-          await loadCategories();
-          console.log('Categories reloaded successfully');
-        } catch (e: any) {
-          console.error('Error during delete:', e);
-          Alert.alert('Error', e?.message || 'Failed to delete category');
-        }
+      console.log('Calling deleteCategory with id:', id);
+      const result = await deleteCategory(id);
+      console.log('deleteCategory returned:', result);
+      console.log('Reloading categories...');
+      // Immediately update the UI without waiting for realtime
+      await loadCategories();
+      console.log('Categories reloaded successfully');
+      Alert.alert('Success', `Category "${name}" deleted successfully`);
+    } catch (e: any) {
+      console.error('Error during delete:', e);
+      Alert.alert('Error', e?.message || 'Failed to delete category');
+    }
   };
 
   const handleSaveOpenAIConfig = async () => {

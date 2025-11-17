@@ -7,7 +7,7 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import * as ImagePicker from 'expo-image-picker';
 import { Colors } from '../../constants/theme';
 import { addTransaction } from '../../src/services/transactions';
-import { getCategories, type Category } from '../../src/services/categories';
+import { getCategories, subscribeToCategoryChanges, type Category } from '../../src/services/categories';
 import { processReceiptImage, type ReceiptData, type ProcessingProgress } from '../../src/services/receipt-processor';
 import { useAuth } from '../../src/providers/AuthProvider';
 
@@ -42,19 +42,40 @@ export default function AddScreen() {
     { label: '$45 Groceries', amount: 45 },
   ];
 
-  // Load categories on mount
+  // Load categories on mount and subscribe to realtime changes
   useEffect(() => {
     loadCategories();
   }, []);
+
+  // Subscribe to category changes for realtime updates
+  useEffect(() => {
+    if (!session) return;
+    let unsub: undefined | (() => Promise<void>);
+    (async () => {
+      try {
+        unsub = await subscribeToCategoryChanges((change) => {
+          // If a category is deleted and it's currently selected, clear the selection
+          if (change.eventType === 'DELETE' && change.old?.id === categoryId) {
+            setCategoryId('');
+          }
+          // Reload categories for any event (INSERT, UPDATE, DELETE)
+          loadCategories();
+        });
+      } catch (e) {
+        console.warn('Category realtime subscription failed:', e);
+      }
+    })();
+    return () => {
+      if (unsub) unsub().catch(() => {});
+    };
+  }, [categoryId, session]);
 
   const loadCategories = async () => {
     try {
       setLoadingCategories(true);
       const data = await getCategories();
       setCategories(data);
-      if (data.length > 0) {
-        setCategoryId(data[0].id);
-      }
+      // Don't auto-select a category - let user explicitly choose
     } catch (error) {
       console.error('Failed to load categories:', error);
     } finally {
@@ -442,8 +463,8 @@ export default function AddScreen() {
             >
               <Text style={categoryId ? styles.selectValue : styles.selectPlaceholder}>
                 {categoryId 
-                  ? categories.find(c => c.id === categoryId)?.name || 'Select category'
-                  : 'Select category'}
+                  ? categories.find(c => c.id === categoryId)?.name || 'No Category'
+                  : 'No Category'}
               </Text>
               <Ionicons name="chevron-down" size={20} color={Colors.textSecondary} />
             </TouchableOpacity>
@@ -578,32 +599,59 @@ export default function AddScreen() {
             <ScrollView style={styles.modalList}>
               {loadingCategories ? (
                 <ActivityIndicator style={styles.modalLoading} />
-              ) : categories.length === 0 ? (
-                <Text style={styles.emptyText}>No categories available. Create one first!</Text>
               ) : (
-                categories.map((category) => (
+                <>
+                  {/* No Category Option */}
                   <TouchableOpacity
-                    key={category.id}
                     style={[
                       styles.modalItem,
-                      categoryId === category.id && styles.modalItemSelected
+                      !categoryId && styles.modalItemSelected
                     ]}
                     onPress={() => {
-                      setCategoryId(category.id);
+                      setCategoryId('');
                       setShowCategoryModal(false);
                     }}
                   >
                     <Text style={[
                       styles.modalItemText,
-                      categoryId === category.id && styles.modalItemTextSelected
+                      !categoryId && styles.modalItemTextSelected
                     ]}>
-                      {category.name}
+                      No Category
                     </Text>
-                    {categoryId === category.id && (
+                    {!categoryId && (
                       <Ionicons name="checkmark" size={20} color={Colors.primary} />
                     )}
                   </TouchableOpacity>
-                ))
+                  
+                  {/* User Categories */}
+                  {categories.length === 0 ? (
+                    <Text style={styles.emptyText}>No custom categories. Create one in Settings!</Text>
+                  ) : (
+                    categories.map((category) => (
+                      <TouchableOpacity
+                        key={category.id}
+                        style={[
+                          styles.modalItem,
+                          categoryId === category.id && styles.modalItemSelected
+                        ]}
+                        onPress={() => {
+                          setCategoryId(category.id);
+                          setShowCategoryModal(false);
+                        }}
+                      >
+                        <Text style={[
+                          styles.modalItemText,
+                          categoryId === category.id && styles.modalItemTextSelected
+                        ]}>
+                          {category.name}
+                        </Text>
+                        {categoryId === category.id && (
+                          <Ionicons name="checkmark" size={20} color={Colors.primary} />
+                        )}
+                      </TouchableOpacity>
+                    ))
+                  )}
+                </>
               )}
             </ScrollView>
           </View>
