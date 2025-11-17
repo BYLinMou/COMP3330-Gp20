@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, ScrollView, StyleSheet, TouchableOpacity, TextInput, Switch, Alert, ActivityIndicator, Modal } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, TouchableOpacity, TextInput, Switch, Alert, ActivityIndicator, Modal, Keyboard } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -58,6 +58,18 @@ export default function SettingsScreen() {
   const [categories, setCategories] = useState<Category[]>([]);
   const [loadingCategories, setLoadingCategories] = useState(true);
   const [newCategoryName, setNewCategoryName] = useState('');
+
+  // Collapsible section state - track which section is expanded
+  const [expandedSection, setExpandedSection] = useState<string | null>('profile');
+
+  // Handler to toggle section expansion
+  const toggleSection = (sectionName: string) => {
+    if (expandedSection === sectionName) {
+      setExpandedSection(null);
+    } else {
+      setExpandedSection(sectionName);
+    }
+  };
 
   // Load OpenAI config on mount
   useEffect(() => {
@@ -167,6 +179,7 @@ export default function SettingsScreen() {
     try {
       await addCategory(name);
       setNewCategoryName('');
+      Keyboard.dismiss();
       // realtime will refresh; fallback refresh now
       await loadCategories();
     } catch (e: any) {
@@ -186,19 +199,31 @@ export default function SettingsScreen() {
     
     console.log('Showing confirmation dialog');
 
-    try {
-      console.log('Calling deleteCategory with id:', id);
-      const result = await deleteCategory(id);
-      console.log('deleteCategory returned:', result);
-      console.log('Reloading categories...');
-      // Immediately update the UI without waiting for realtime
-      await loadCategories();
-      console.log('Categories reloaded successfully');
-      Alert.alert('Success', `Category "${name}" deleted successfully`);
-    } catch (e: any) {
-      console.error('Error during delete:', e);
-      Alert.alert('Error', e?.message || 'Failed to delete category');
-    }
+    Alert.alert(
+      'Delete Category',
+      `Are you sure you want to delete "${name}"?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              console.log('Calling deleteCategory with id:', id);
+              const result = await deleteCategory(id);
+              console.log('deleteCategory returned:', result);
+              console.log('Reloading categories...');
+              // Immediately update the UI without waiting for realtime
+              await loadCategories();
+              console.log('Categories reloaded successfully');
+            } catch (e: any) {
+              console.error('Error during delete:', e);
+              Alert.alert('Error', e?.message || 'Failed to delete category');
+            }
+          },
+        },
+      ]
+    );
   };
 
   const handleSaveOpenAIConfig = async () => {
@@ -227,25 +252,50 @@ export default function SettingsScreen() {
     }
   };
 
-  async function handleSignOut() {
-    const { error } = await supabase.auth.signOut();
-    if (error) {
-      Alert.alert('Info', 'Running in demo mode. To enable authentication, configure your Supabase credentials.');
-    }
+  function handleSignOut() {
+    Alert.alert(
+      'Sign Out',
+      'Are you sure you want to sign out?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Sign Out',
+          style: 'destructive',
+          onPress: async () => {
+            const { error } = await supabase.auth.signOut();
+            if (error) {
+              Alert.alert('Info', 'Running in demo mode. To enable authentication, configure your Supabase credentials.');
+            }
+          },
+        },
+      ]
+    );
   }
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        {/* Profile Settings */}
+      <ScrollView style={styles.content} showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+        {/* Profile Settings - Collapsible */}
         <View style={styles.card}>
-          <View style={styles.sectionHeader}>
-            <Ionicons name="person-outline" size={24} color={Colors.textPrimary} />
-            <Text style={styles.sectionTitle}>Profile Settings</Text>
-          </View>
+          <TouchableOpacity
+            style={styles.collapsibleHeader}
+            onPress={() => toggleSection('profile')}
+          >
+            <View style={styles.collapsibleHeaderLeft}>
+              <Ionicons
+                name={expandedSection === 'profile' ? 'chevron-down' : 'chevron-forward'}
+                size={20}
+                color={Colors.primary}
+              />
+              <Ionicons name="person-outline" size={24} color={Colors.textPrimary} />
+              <Text style={styles.collapsibleHeaderTitle}>Profile Settings</Text>
+            </View>
+          </TouchableOpacity>
 
-          <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>Full Name</Text>
+          {expandedSection === 'profile' && (
+            <View style={styles.collapsibleContent}>
+              <View style={styles.inputGroup}>
+            <Text style={styles.inputLabel}>User Name</Text>
             <TextInput
               style={styles.textInput}
               value={fullName}
@@ -270,7 +320,7 @@ export default function SettingsScreen() {
 
           <View style={styles.row}>
             <View style={[styles.inputGroup, styles.halfWidth]}>
-              <Text style={styles.inputLabel}>Currency</Text>
+              <Text style={styles.inputLabel}>Primary Currency</Text>
               <TouchableOpacity style={styles.selectInput}>
                 <Text style={styles.selectText}>{currency}</Text>
                 <Ionicons name="chevron-down" size={20} color={Colors.textSecondary} />
@@ -303,370 +353,460 @@ export default function SettingsScreen() {
           <TouchableOpacity style={styles.saveButton}>
             <Text style={styles.saveButtonText}>Save Profile Changes</Text>
           </TouchableOpacity>
-        </View>
-
-        {/* Notifications */}
-        <View style={styles.card}>
-          <View style={styles.sectionHeader}>
-            <Ionicons name="notifications-outline" size={24} color={Colors.textPrimary} />
-            <Text style={styles.sectionTitle}>Notifications</Text>
-          </View>
-
-          <View style={styles.settingItem}>
-            <View style={styles.settingLeft}>
-              <Text style={styles.settingTitle}>Budget Alerts</Text>
-              <Text style={styles.settingDescription}>Get notified when approaching budget limits</Text>
-            </View>
-            <Switch
-              value={budgetAlerts}
-              onValueChange={setBudgetAlerts}
-              trackColor={{ false: Colors.gray300, true: Colors.primary }}
-              thumbColor={Colors.white}
-            />
-          </View>
-
-          <View style={styles.settingItem}>
-            <View style={styles.settingLeft}>
-              <Text style={styles.settingTitle}>Daily Reminders</Text>
-              <Text style={styles.settingDescription}>Remind me to log expenses daily</Text>
-            </View>
-            <Switch
-              value={dailyReminders}
-              onValueChange={setDailyReminders}
-              trackColor={{ false: Colors.gray300, true: Colors.primary }}
-              thumbColor={Colors.white}
-            />
-          </View>
-
-          <View style={styles.settingItem}>
-            <View style={styles.settingLeft}>
-              <Text style={styles.settingTitle}>Weekly Reports</Text>
-              <Text style={styles.settingDescription}>Receive weekly spending summaries</Text>
-            </View>
-            <Switch
-              value={weeklyReports}
-              onValueChange={setWeeklyReports}
-              trackColor={{ false: Colors.gray300, true: Colors.primary }}
-              thumbColor={Colors.white}
-            />
-          </View>
-
-          <View style={styles.settingItem}>
-            <View style={styles.settingLeft}>
-              <Text style={styles.settingTitle}>Marketing Emails</Text>
-              <Text style={styles.settingDescription}>Tips and product updates</Text>
-            </View>
-            <Switch
-              value={marketingEmails}
-              onValueChange={setMarketingEmails}
-              trackColor={{ false: Colors.gray300, true: Colors.primary }}
-              thumbColor={Colors.white}
-            />
-          </View>
-        </View>
-
-        {/* OpenAI Configuration */}
-        <View style={styles.card}>
-          <View style={styles.sectionHeader}>
-            <Ionicons name="sparkles-outline" size={24} color={Colors.textPrimary} />
-            <Text style={styles.sectionTitle}>OpenAI Configuration</Text>
-          </View>
-
-          <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>API Base URL</Text>
-            <TextInput
-              style={styles.textInput}
-              value={openaiUrl}
-              onChangeText={setOpenaiUrl}
-              placeholder="https://api.openai.com/v1"
-              autoCapitalize="none"
-            />
-          </View>
-
-          <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>API Key</Text>
-            <View style={styles.keyInputContainer}>
-              <TextInput
-                style={styles.keyInput}
-                value={openaiKey}
-                onChangeText={setOpenaiKey}
-                placeholder="sk-..."
-                secureTextEntry={!showApiKey}
-                autoCapitalize="none"
-              />
-              <TouchableOpacity 
-                style={styles.keyVisibilityButton}
-                onPress={() => setShowApiKey(!showApiKey)}
-              >
-                <Ionicons 
-                  name={showApiKey ? "eye-outline" : "eye-off-outline"} 
-                  size={20} 
-                  color={Colors.textSecondary} 
-                />
-              </TouchableOpacity>
-            </View>
-          </View>
-
-          {/* Model Selection Collapsible Section */}
-          <View style={styles.collapsibleSection}>
-            <TouchableOpacity 
-              style={styles.collapsibleHeader}
-              onPress={() => setShowModelSelection(!showModelSelection)}
-            >
-              <View style={styles.collapsibleHeaderLeft}>
-                <Ionicons 
-                  name={showModelSelection ? "chevron-down" : "chevron-forward"} 
-                  size={20} 
-                  color={Colors.primary} 
-                />
-                <Text style={styles.collapsibleHeaderTitle}>AI Model Selection</Text>
-              </View>
-              {(primaryModel || fallbackModel) && (
-                <View style={styles.modelIndicator}>
-                  <Text style={styles.modelIndicatorText}>
-                    {primaryModel ? '1' : ''}{fallbackModel ? '+1' : ''}
-                  </Text>
-                </View>
-              )}
-            </TouchableOpacity>
-
-            {showModelSelection && (
-              <View style={styles.collapsibleContent}>
-                {/* Fetch Models Button */}
-                <TouchableOpacity 
-                  style={[styles.fetchModelsButton, loadingModels && styles.fetchModelsButtonDisabled]}
-                  onPress={handleFetchModels}
-                  disabled={loadingModels}
-                >
-                  {loadingModels ? (
-                    <ActivityIndicator color={Colors.white} />
-                  ) : (
-                    <>
-                      <Ionicons name="refresh-outline" size={20} color={Colors.white} />
-                      <Text style={styles.fetchModelsButtonText}>Fetch Available Models</Text>
-                    </>
-                  )}
-                </TouchableOpacity>
-
-                {/* Model Selection UI - Always show if we have models or previously selected models */}
-                {(availableModels.length > 0 || primaryModel || fallbackModel) && (
-                  <>
-                    <View style={styles.inputGroup}>
-                      <Text style={styles.inputLabel}>
-                        Primary Model <Text style={styles.required}>*</Text>
-                      </Text>
-                      <TouchableOpacity 
-                        style={styles.selectInput}
-                        onPress={() => availableModels.length > 0 && setShowPrimaryModelModal(true)}
-                        disabled={availableModels.length === 0}
-                      >
-                        <Text style={primaryModel ? styles.selectText : styles.selectPlaceholder}>
-                          {primaryModel || (availableModels.length === 0 ? 'Fetch models first' : 'Select primary model')}
-                        </Text>
-                        <Ionicons name="chevron-down" size={20} color={Colors.textSecondary} />
-                      </TouchableOpacity>
-                      {primaryModel && availableModels.length === 0 && (
-                        <Text style={styles.helperText}>Currently selected: {primaryModel}</Text>
-                      )}
-                    </View>
-
-                    <View style={styles.inputGroup}>
-                      <Text style={styles.inputLabel}>Fallback Model (Optional)</Text>
-                      <TouchableOpacity 
-                        style={styles.selectInput}
-                        onPress={() => availableModels.length > 0 && setShowFallbackModelModal(true)}
-                        disabled={availableModels.length === 0}
-                      >
-                        <Text style={fallbackModel ? styles.selectText : styles.selectPlaceholder}>
-                          {fallbackModel || (availableModels.length === 0 ? 'Fetch models first' : 'Select fallback model')}
-                        </Text>
-                        <Ionicons name="chevron-down" size={20} color={Colors.textSecondary} />
-                      </TouchableOpacity>
-                      {fallbackModel && availableModels.length === 0 && (
-                        <Text style={styles.helperText}>Currently selected: {fallbackModel}</Text>
-                      )}
-                    </View>
-                  </>
-                )}
-
-                {availableModels.length === 0 && !primaryModel && !fallbackModel && !loadingModels && (
-                  <View style={styles.infoBox}>
-                    <Ionicons name="information-circle-outline" size={20} color={Colors.primary} />
-                    <Text style={styles.infoText}>
-                      Enter your OpenAI credentials and fetch models to configure AI features.
-                    </Text>
-                  </View>
-                )}
-              </View>
-            )}
-          </View>
-
-          {/* Save OpenAI Configuration Button - Outside collapsible section */}
-          <TouchableOpacity 
-            style={[styles.saveButton, styles.saveOpenaiButton]}
-            onPress={handleSaveOpenAIConfig}
-          >
-            <Text style={styles.saveButtonText}>Save OpenAI Configuration</Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Custom Categories */}
-        <View style={styles.card}>
-          <Text style={styles.sectionTitle}>Custom Categories</Text>
-          <Text style={styles.sectionDescription}>Personalize your expense categories</Text>
-
-          <View style={styles.addCategoryContainer}>
-            <TextInput
-              style={styles.addCategoryInput}
-              placeholder="Add new category..."
-              value={newCategoryName}
-              onChangeText={setNewCategoryName}
-            />
-            <TouchableOpacity style={styles.addButton} onPress={handleAddCategory} disabled={!session}>
-              <Text style={styles.addButtonText}>Add</Text>
-            </TouchableOpacity>
-          </View>
-
-          {loadingCategories ? (
-            <ActivityIndicator />
-          ) : categories.length === 0 ? (
-            <Text style={styles.helperText}>No categories yet. Add your first one!</Text>
-          ) : (
-            <View style={styles.categoryTags}>
-              {categories.map((category) => (
-                <View key={category.id} style={styles.categoryTag}>
-                  <Text style={styles.categoryTagText}>{category.name}</Text>
-                  <TouchableOpacity 
-                    onPress={() => {
-                      console.log('TouchableOpacity pressed for:', category.name);
-                      handleDeleteCategory(category.id, category.name);
-                    }}
-                    disabled={!session}
-                    style={styles.deleteButton}
-                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                    activeOpacity={0.6}
-                  >
-                    <Ionicons 
-                      name="close-circle" 
-                      size={20} 
-                      color={!session ? Colors.textSecondary : '#FF3B30'} 
-                    />
-                  </TouchableOpacity>
-                </View>
-              ))}
             </View>
           )}
         </View>
 
-        {/* Data & Privacy */}
+        {/* OpenAI Configuration - Collapsible */}
         <View style={styles.card}>
-          <View style={styles.sectionHeader}>
-            <Ionicons name="shield-checkmark-outline" size={24} color={Colors.textPrimary} />
-            <Text style={styles.sectionTitle}>Data & Privacy</Text>
-          </View>
-
-          <TouchableOpacity style={styles.menuItem}>
-            <Ionicons name="download-outline" size={20} color={Colors.textPrimary} />
-            <Text style={styles.menuItemText}>Export My Data</Text>
+          <TouchableOpacity
+            style={styles.collapsibleHeader}
+            onPress={() => toggleSection('openai')}
+          >
+            <View style={styles.collapsibleHeaderLeft}>
+              <Ionicons
+                name={expandedSection === 'openai' ? 'chevron-down' : 'chevron-forward'}
+                size={20}
+                color={Colors.primary}
+              />
+              <Ionicons name="sparkles-outline" size={24} color={Colors.textPrimary} />
+              <Text style={styles.collapsibleHeaderTitle}>OpenAI Configuration</Text>
+            </View>
           </TouchableOpacity>
 
-          <TouchableOpacity style={styles.menuItem}>
-            <Ionicons name="lock-closed-outline" size={20} color={Colors.textPrimary} />
-            <Text style={styles.menuItemText}>Privacy Settings</Text>
+          {expandedSection === 'openai' && (
+            <View style={styles.collapsibleContent}>
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>API Base URL</Text>
+                <TextInput
+                  style={styles.textInput}
+                  value={openaiUrl}
+                  onChangeText={setOpenaiUrl}
+                  placeholder="https://api.openai.com/v1"
+                  autoCapitalize="none"
+                />
+              </View>
+
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>API Key</Text>
+                <View style={styles.keyInputContainer}>
+                  <TextInput
+                    style={styles.keyInput}
+                    value={openaiKey}
+                    onChangeText={setOpenaiKey}
+                    placeholder="sk-..."
+                    secureTextEntry={!showApiKey}
+                    autoCapitalize="none"
+                  />
+                  <TouchableOpacity 
+                    style={styles.keyVisibilityButton}
+                    onPress={() => setShowApiKey(!showApiKey)}
+                  >
+                    <Ionicons 
+                      name={showApiKey ? "eye-outline" : "eye-off-outline"} 
+                      size={20} 
+                      color={Colors.textSecondary} 
+                    />
+                  </TouchableOpacity>
+                </View>
+              </View>
+
+              {/* Model Selection Collapsible Section */}
+              <View style={styles.collapsibleSection}>
+                <TouchableOpacity 
+                  style={styles.modelSelectionHeader}
+                  onPress={() => setShowModelSelection(!showModelSelection)}
+                >
+                  <View style={styles.collapsibleHeaderLeft}>
+                    <Ionicons 
+                      name={showModelSelection ? "chevron-down" : "chevron-forward"} 
+                      size={20} 
+                      color={Colors.primary} 
+                    />
+                    <Text style={styles.collapsibleHeaderTitle}>AI Model Selection</Text>
+                  </View>
+                  {(primaryModel || fallbackModel) && (
+                    <View style={styles.modelIndicator}>
+                      <Text style={styles.modelIndicatorText}>
+                        {primaryModel ? '1' : ''}{fallbackModel ? '+1' : ''}
+                      </Text>
+                    </View>
+                  )}
+                </TouchableOpacity>
+
+                {showModelSelection && (
+                  <View style={{ marginTop: 6 }}>
+                    {/* Fetch Models Button */}
+                    <View style={{ alignItems: 'center' }}>
+                      <TouchableOpacity 
+                        style={[styles.signOutPill, { backgroundColor: Colors.primary }, loadingModels && styles.modelsPillDisabled]}
+                        onPress={handleFetchModels}
+                        disabled={loadingModels}
+                      >
+                        <Ionicons name="refresh-outline" size={16} color={Colors.white} />
+                        <Text style={styles.signOutPillText}>Fetch Available Models</Text>
+                        {loadingModels && <ActivityIndicator color={Colors.white} style={{ marginLeft: 8 }} />}
+                      </TouchableOpacity>
+                    </View>
+
+                    {/* Model Selection UI - Always show if we have models or previously selected models */}
+                    {(availableModels.length > 0 || primaryModel || fallbackModel) && (
+                      <>
+                        <View style={[styles.inputGroup, {paddingVertical: 8, paddingHorizontal: 10}]}> 
+                          <Text style={styles.inputLabel}>
+                            Primary Model <Text style={styles.required}>*</Text>
+                          </Text>
+                          <TouchableOpacity 
+                            style={styles.selectInput}
+                            onPress={() => availableModels.length > 0 && setShowPrimaryModelModal(true)}
+                            disabled={availableModels.length === 0}
+                          >
+                            <Text style={primaryModel ? styles.selectText : styles.selectPlaceholder}>
+                              {primaryModel || (availableModels.length === 0 ? 'Fetch models first' : 'Select primary model')}
+                            </Text>
+                            <Ionicons name="chevron-down" size={20} color={Colors.textSecondary} />
+                          </TouchableOpacity>
+                          {/* Removed 'Currently selected' helper text for primary model */}
+                        </View>
+
+                        <View style={[styles.inputGroup, {paddingVertical: 8, paddingHorizontal: 8}]}> 
+                          <Text style={styles.inputLabel}>Fallback Model (Optional)</Text>
+                          <TouchableOpacity 
+                            style={styles.selectInput}
+                            onPress={() => availableModels.length > 0 && setShowFallbackModelModal(true)}
+                            disabled={availableModels.length === 0}
+                          >
+                            <Text style={fallbackModel ? styles.selectText : styles.selectPlaceholder}>
+                              {fallbackModel || (availableModels.length === 0 ? 'Fetch models first' : 'Select fallback model')}
+                            </Text>
+                            <Ionicons name="chevron-down" size={20} color={Colors.textSecondary} />
+                          </TouchableOpacity>
+                          {/* Removed 'Currently selected' helper text for fallback model */}
+                        </View>
+                      </>
+                    )}
+
+                    {availableModels.length === 0 && !primaryModel && !fallbackModel && !loadingModels && (
+                      <View style={styles.infoBox}>
+                        <Ionicons name="information-circle-outline" size={20} color={Colors.primary} />
+                        <Text style={styles.infoText}>
+                          Enter your OpenAI credentials and fetch models to configure AI features.
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+                )}
+              </View>
+
+              {/* Save OpenAI Configuration Button - Outside collapsible section */}
+              <TouchableOpacity 
+                style={[styles.saveButton, styles.saveOpenaiButton]}
+                onPress={handleSaveOpenAIConfig}
+              >
+                <Text style={styles.saveButtonText}>Save OpenAI Configuration</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
+
+        {/* Custom Categories - Collapsible */}
+        <View style={styles.card}>
+          <TouchableOpacity
+            style={styles.collapsibleHeader}
+            onPress={() => toggleSection('categories')}
+          >
+            <View style={styles.collapsibleHeaderLeft}>
+              <Ionicons
+                name={expandedSection === 'categories' ? 'chevron-down' : 'chevron-forward'}
+                size={20}
+                color={Colors.primary}
+              />
+              <Ionicons name="pricetag-outline" size={24} color={Colors.textPrimary} />
+              <Text style={styles.collapsibleHeaderTitle}>Custom Categories</Text>
+            </View>
           </TouchableOpacity>
 
-          <View style={styles.privacyInfo}>
-            <Text style={styles.privacyText}>
-              Your data is encrypted and securely stored. We never share your personal financial information with third parties.
+          {expandedSection === 'categories' && (
+            <View style={styles.collapsibleContent}>
+              <Text style={styles.sectionDescription}>Personalize your expense categories</Text>
+
+              <View style={styles.addCategoryContainer}>
+                <TextInput
+                  style={styles.addCategoryInput}
+                  placeholder="Add new category..."
+                  value={newCategoryName}
+                  onChangeText={setNewCategoryName}
+                />
+                <TouchableOpacity style={styles.addButton} onPress={handleAddCategory} disabled={!session}>
+                  <Text style={styles.addButtonText}>Add</Text>
+                </TouchableOpacity>
+              </View>
+
+              {loadingCategories ? (
+                <ActivityIndicator />
+              ) : categories.length === 0 ? (
+                <Text style={styles.helperText}>No categories yet. Add your first one!</Text>
+              ) : (
+                <View style={styles.categoryTags}>
+                  {categories.map((category) => (
+                    <View key={category.id} style={styles.categoryTag}>
+                      <Text style={styles.categoryTagText}>{category.name}</Text>
+                      <TouchableOpacity 
+                        onPress={() => {
+                          console.log('TouchableOpacity pressed for:', category.name);
+                          handleDeleteCategory(category.id, category.name);
+                        }}
+                        disabled={!session}
+                        style={styles.deleteButton}
+                        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                        activeOpacity={0.6}
+                      >
+                        <Ionicons 
+                          name="close-circle" 
+                          size={18} 
+                          color={!session ? Colors.textSecondary : '#FF3B30'} 
+                        />
+                      </TouchableOpacity>
+                    </View>
+                  ))}
+                </View>
+              )}
+            </View>
+          )}
+        </View>
+
+        {/* Data & Privacy - Collapsible */}
+        <View style={styles.card}>
+          <TouchableOpacity
+            style={styles.collapsibleHeader}
+            onPress={() => toggleSection('privacy')}
+          >
+            <View style={styles.collapsibleHeaderLeft}>
+              <Ionicons
+                name={expandedSection === 'privacy' ? 'chevron-down' : 'chevron-forward'}
+                size={20}
+                color={Colors.primary}
+              />
+              <Ionicons name="shield-checkmark-outline" size={24} color={Colors.textPrimary} />
+              <Text style={styles.collapsibleHeaderTitle}>Data & Privacy</Text>
+            </View>
+          </TouchableOpacity>
+
+          {expandedSection === 'privacy' && (
+            <View style={styles.collapsibleContent}>
+              <TouchableOpacity style={styles.menuItem}>
+                <Ionicons name="download-outline" size={20} color={Colors.textPrimary} />
+                <Text style={styles.menuItemText}>Export My Data</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity style={[styles.menuItem, { borderBottomWidth: 0 }]}>
+                <Ionicons name="lock-closed-outline" size={20} color={Colors.textPrimary} />
+                <Text style={styles.menuItemText}>Privacy Settings</Text>
+              </TouchableOpacity>
+
+              <View style={styles.privacyInfo}>
+                <Text style={styles.privacyText}>
+                  Your data is encrypted and securely stored. We never share your personal financial information with third parties.
+                </Text>
+                <Text style={styles.backupText}>Last backup: Today at 3:24 PM</Text>
+              </View>
+            </View>
+          )}
+        </View>
+
+        {/* Notifications - Collapsible */}
+        <View style={styles.card}>
+          <TouchableOpacity
+            style={styles.collapsibleHeader}
+            onPress={() => toggleSection('notifications')}
+          >
+            <View style={styles.collapsibleHeaderLeft}>
+              <Ionicons
+                name={expandedSection === 'notifications' ? 'chevron-down' : 'chevron-forward'}
+                size={20}
+                color={Colors.primary}
+              />
+              <Ionicons name="notifications-outline" size={24} color={Colors.textPrimary} />
+              <Text style={styles.collapsibleHeaderTitle}>Notifications</Text>
+            </View>
+          </TouchableOpacity>
+
+          {expandedSection === 'notifications' && (
+            <View style={styles.collapsibleContent}>
+              <View style={styles.settingItem}>
+                <View style={styles.settingLeft}>
+                  <Text style={styles.settingTitle}>Budget Alerts</Text>
+                  <Text style={styles.settingDescription}>Get notified when approaching budget limits</Text>
+                </View>
+                <Switch
+                  value={budgetAlerts}
+                  onValueChange={setBudgetAlerts}
+                  trackColor={{ false: Colors.gray300, true: Colors.primary }}
+                  thumbColor={Colors.white}
+                />
+              </View>
+
+              <View style={styles.settingItem}>
+                <View style={styles.settingLeft}>
+                  <Text style={styles.settingTitle}>Daily Reminders</Text>
+                  <Text style={styles.settingDescription}>Remind me to log expenses daily</Text>
+                </View>
+                <Switch
+                  value={dailyReminders}
+                  onValueChange={setDailyReminders}
+                  trackColor={{ false: Colors.gray300, true: Colors.primary }}
+                  thumbColor={Colors.white}
+                />
+              </View>
+
+              <View style={styles.settingItem}>
+                <View style={styles.settingLeft}>
+                  <Text style={styles.settingTitle}>Weekly Reports</Text>
+                  <Text style={styles.settingDescription}>Receive weekly spending summaries</Text>
+                </View>
+                <Switch
+                  value={weeklyReports}
+                  onValueChange={setWeeklyReports}
+                  trackColor={{ false: Colors.gray300, true: Colors.primary }}
+                  thumbColor={Colors.white}
+                />
+              </View>
+
+              <View style={[styles.settingItem, { borderBottomWidth: 0 }]}>
+                <View style={styles.settingLeft}>
+                  <Text style={styles.settingTitle}>Marketing Emails</Text>
+                  <Text style={styles.settingDescription}>Tips and product updates</Text>
+                </View>
+                <Switch
+                  value={marketingEmails}
+                  onValueChange={setMarketingEmails}
+                  trackColor={{ false: Colors.gray300, true: Colors.primary }}
+                  thumbColor={Colors.white}
+                />
+              </View>
+            </View>
+          )}
+        </View>
+
+        {/* App Preferences - Collapsible */}
+        <View style={styles.card}>
+          <TouchableOpacity
+            style={styles.collapsibleHeader}
+            onPress={() => toggleSection('preferences')}
+          >
+            <View style={styles.collapsibleHeaderLeft}>
+              <Ionicons
+                name={expandedSection === 'preferences' ? 'chevron-down' : 'chevron-forward'}
+                size={20}
+                color={Colors.primary}
+              />
+              <Ionicons name="settings-outline" size={24} color={Colors.textPrimary} />
+              <Text style={styles.collapsibleHeaderTitle}>App Preferences</Text>
+            </View>
+          </TouchableOpacity>
+
+          {expandedSection === 'preferences' && (
+            <View style={styles.collapsibleContent}>
+              <View style={styles.settingItem}>
+                <View style={styles.settingLeft}>
+                  <Text style={styles.settingTitle}>Dark Mode</Text>
+                  <Text style={styles.settingDescription}>Switch to dark theme</Text>
+                </View>
+                <Switch
+                  value={darkMode}
+                  onValueChange={setDarkMode}
+                  trackColor={{ false: Colors.gray300, true: Colors.primary }}
+                  thumbColor={Colors.white}
+                />
+              </View>
+
+              <View style={styles.settingItem}>
+                <View style={styles.settingLeft}>
+                  <Text style={styles.settingTitle}>Biometric Login</Text>
+                  <Text style={styles.settingDescription}>Use fingerprint or face ID</Text>
+                </View>
+                <Switch
+                  value={biometricLogin}
+                  onValueChange={setBiometricLogin}
+                  trackColor={{ false: Colors.gray300, true: Colors.primary }}
+                  thumbColor={Colors.white}
+                />
+              </View>
+
+              <View style={[styles.settingItem, { borderBottomWidth: 0 }]}>
+                <View style={styles.settingLeft}>
+                  <Text style={styles.settingTitle}>Auto-Sync</Text>
+                  <Text style={styles.settingDescription}>Sync across all devices</Text>
+                </View>
+                <Switch
+                  value={autoSync}
+                  onValueChange={setAutoSync}
+                  trackColor={{ false: Colors.gray300, true: Colors.primary }}
+                  thumbColor={Colors.white}
+                />
+              </View>
+            </View>
+          )}
+        </View>
+
+        {/* Help & Support - Collapsible */}
+        <View style={styles.card}>
+          <TouchableOpacity
+            style={styles.collapsibleHeader}
+            onPress={() => toggleSection('support')}
+          >
+            <View style={styles.collapsibleHeaderLeft}>
+              <Ionicons
+                name={expandedSection === 'support' ? 'chevron-down' : 'chevron-forward'}
+                size={20}
+                color={Colors.primary}
+              />
+              <Ionicons name="help-circle-outline" size={24} color={Colors.textPrimary} />
+              <Text style={styles.collapsibleHeaderTitle}>Help & Support</Text>
+            </View>
+          </TouchableOpacity>
+
+          {expandedSection === 'support' && (
+            <View style={styles.collapsibleContent}>
+              <TouchableOpacity style={styles.menuItem}>
+                <Text style={styles.menuItemText}>FAQ & Help Center</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity style={styles.menuItem}>
+                <Text style={styles.menuItemText}>Contact Support</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity style={styles.menuItem}>
+                <Text style={styles.menuItemText}>App Tutorial</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity style={styles.menuItem}>
+                <Text style={styles.menuItemText}>Terms of Service</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity style={[styles.menuItem, { borderBottomWidth: 0 }]}>
+                <Text style={styles.menuItemText}>Privacy Policy</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
+
+        {/* Sign Out - Small Oval Button */}
+        <View style={{ alignItems: 'center', marginTop: 8 }}>
+          <TouchableOpacity style={styles.signOutPill} onPress={handleSignOut}>
+            <Ionicons name="log-out-outline" size={16} color={Colors.white} />
+            <Text style={styles.signOutPillText}>Sign Out</Text>
+          </TouchableOpacity>
+        </View>
+
+        {/* Version - Small Gray Oval */}
+        <View style={{ alignItems: 'center', marginTop: 12 }}>
+          <View style={styles.versionPill}>
+            <Text style={styles.versionPillText}>
+              AuraSpend v{Constants.expoConfig?.extra?.appVersion || Constants.expoConfig?.version || '0.0.0'}
             </Text>
-            <Text style={styles.backupText}>Last backup: Today at 3:24 PM</Text>
           </View>
         </View>
-
-        {/* App Preferences */}
-        <View style={styles.card}>
-          <View style={styles.sectionHeader}>
-            <Ionicons name="settings-outline" size={24} color={Colors.textPrimary} />
-            <Text style={styles.sectionTitle}>App Preferences</Text>
-          </View>
-
-          <View style={styles.settingItem}>
-            <View style={styles.settingLeft}>
-              <Text style={styles.settingTitle}>Dark Mode</Text>
-              <Text style={styles.settingDescription}>Switch to dark theme</Text>
-            </View>
-            <Switch
-              value={darkMode}
-              onValueChange={setDarkMode}
-              trackColor={{ false: Colors.gray300, true: Colors.primary }}
-              thumbColor={Colors.white}
-            />
-          </View>
-
-          <View style={styles.settingItem}>
-            <View style={styles.settingLeft}>
-              <Text style={styles.settingTitle}>Biometric Login</Text>
-              <Text style={styles.settingDescription}>Use fingerprint or face ID</Text>
-            </View>
-            <Switch
-              value={biometricLogin}
-              onValueChange={setBiometricLogin}
-              trackColor={{ false: Colors.gray300, true: Colors.primary }}
-              thumbColor={Colors.white}
-            />
-          </View>
-
-          <View style={styles.settingItem}>
-            <View style={styles.settingLeft}>
-              <Text style={styles.settingTitle}>Auto-Sync</Text>
-              <Text style={styles.settingDescription}>Sync across all devices</Text>
-            </View>
-            <Switch
-              value={autoSync}
-              onValueChange={setAutoSync}
-              trackColor={{ false: Colors.gray300, true: Colors.primary }}
-              thumbColor={Colors.white}
-            />
-          </View>
-        </View>
-
-        {/* Help & Support */}
-        <View style={styles.card}>
-          <View style={styles.sectionHeader}>
-            <Ionicons name="help-circle-outline" size={24} color={Colors.textPrimary} />
-            <Text style={styles.sectionTitle}>Help & Support</Text>
-          </View>
-
-          <TouchableOpacity style={styles.menuItem}>
-            <Text style={styles.menuItemText}>FAQ & Help Center</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.menuItem}>
-            <Text style={styles.menuItemText}>Contact Support</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.menuItem}>
-            <Text style={styles.menuItemText}>App Tutorial</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.menuItem}>
-            <Text style={styles.menuItemText}>Terms of Service</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.menuItem}>
-            <Text style={styles.menuItemText}>Privacy Policy</Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Sign Out */}
-        <TouchableOpacity style={styles.signOutButton} onPress={handleSignOut}>
-          <Ionicons name="log-out-outline" size={20} color={Colors.white} />
-          <Text style={styles.signOutText}>Sign Out</Text>
-        </TouchableOpacity>
-
-        <Text style={styles.version}>
-          AuraSpend v{Constants.expoConfig?.extra?.appVersion || Constants.expoConfig?.version || '0.0.0'}
-        </Text>
 
         <View style={{ height: 20 }} />
       </ScrollView>
@@ -680,7 +820,7 @@ export default function SettingsScreen() {
       >
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
+            <View style={styles.modelSelectionModalHeader}>
               <Text style={styles.modalTitle}>Select Primary Model</Text>
               <TouchableOpacity onPress={() => setShowPrimaryModelModal(false)}>
                 <Ionicons name="close" size={24} color={Colors.textPrimary} />
@@ -730,7 +870,7 @@ export default function SettingsScreen() {
       >
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
+            <View style={styles.modelSelectionModalHeader}>
               <Text style={styles.modalTitle}>Select Fallback Model</Text>
               <TouchableOpacity onPress={() => setShowFallbackModelModal(false)}>
                 <Ionicons name="close" size={24} color={Colors.textPrimary} />
@@ -798,6 +938,17 @@ export default function SettingsScreen() {
 }
 
 const styles = StyleSheet.create({
+    modelSelectionHeader: {
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+      paddingHorizontal: 12,
+      paddingVertical: 10,
+      minHeight: 48,
+      backgroundColor: Colors.white,
+      borderTopLeftRadius: 12,
+      borderTopRightRadius: 12,
+    },
   container: {
     flex: 1,
     backgroundColor: Colors.background,
@@ -808,8 +959,8 @@ const styles = StyleSheet.create({
   },
   card: {
     backgroundColor: Colors.white,
-    borderRadius: 16,
-    padding: 20,
+    borderRadius: 18,
+    padding: 16,
     marginBottom: 16,
     shadowColor: Colors.black,
     shadowOffset: { width: 0, height: 2 },
@@ -834,7 +985,8 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   inputGroup: {
-    marginBottom: 20,
+    marginBottom: 1,
+    paddingHorizontal: 4,
   },
   inputLabel: {
     fontSize: 14,
@@ -915,7 +1067,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 12,
+    paddingVertical: 1,
+    paddingHorizontal: 4,
     borderBottomWidth: 1,
     borderBottomColor: Colors.gray100,
   },
@@ -936,7 +1089,8 @@ const styles = StyleSheet.create({
   addCategoryContainer: {
     flexDirection: 'row',
     gap: 12,
-    marginBottom: 16,
+    marginBottom: 1,
+    paddingHorizontal: 4,
   },
   addCategoryInput: {
     flex: 1,
@@ -962,15 +1116,17 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
+    paddingHorizontal: 4,
+    marginTop: 12,
   },
   categoryTag: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: Colors.gray100,
     borderRadius: 16,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    gap: 6,
+    paddingVertical: 4,
+    paddingHorizontal: 7,
+    gap: -2,
   },
   categoryTagText: {
     fontSize: 13,
@@ -978,14 +1134,16 @@ const styles = StyleSheet.create({
     color: Colors.textPrimary,
   },
   deleteButton: {
-    padding: 4,
+    padding: 2,
     marginLeft: 4,
   },
   menuItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 14,
-    gap: 12,
+    // justifyContent: 'center',
+    paddingVertical: 3.5,
+    paddingHorizontal: 5,
+    gap: 10,
     borderBottomWidth: 1,
     borderBottomColor: Colors.gray100,
   },
@@ -995,7 +1153,9 @@ const styles = StyleSheet.create({
   },
   privacyInfo: {
     marginTop: 16,
-    paddingTop: 16,
+    paddingTop: 4,
+    paddingLeft: 4,
+    paddingRight: 4,
     borderTopWidth: 1,
     borderTopColor: Colors.gray100,
   },
@@ -1009,45 +1169,51 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: Colors.textSecondary,
   },
-  signOutButton: {
-    backgroundColor: Colors.error,
-    borderRadius: 12,
-    paddingVertical: 16,
+  signOutPill: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
-    marginTop: 8,
+    backgroundColor: Colors.error,
+    borderRadius: 999,
+    paddingHorizontal: 18,
+    paddingVertical: 6,
+    minHeight: 28,
+    minWidth: 80,
+    gap: 6,
+    shadowColor: Colors.black,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 2,
+    elevation: 1,
   },
-  signOutText: {
+  signOutPillText: {
     fontSize: 16,
-    fontWeight: '700',
+    fontWeight: '600',
     color: Colors.white,
+    paddingLeft: 2,
+    paddingRight: 2,
   },
-  version: {
-    fontSize: 13,
+  versionPill: {
+    backgroundColor: Colors.gray200,
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    paddingVertical: 4,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 22,
+    minWidth: 80,
+  },
+  versionPillText: {
+    fontSize: 12,
     color: Colors.textSecondary,
+    fontWeight: '500',
     textAlign: 'center',
-    marginTop: 16,
+    paddingLeft: 2,
+    paddingRight: 2,
   },
   // OpenAI Configuration Styles
-  fetchModelsButton: {
-    backgroundColor: Colors.primary,
-    borderRadius: 12,
-    paddingVertical: 14,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    marginBottom: 20,
-  },
-  fetchModelsButtonDisabled: {
+  modelsPillDisabled: {
     backgroundColor: Colors.gray300,
-  },
-  fetchModelsButtonText: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: Colors.white,
   },
   required: {
     color: Colors.error,
@@ -1061,7 +1227,7 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     gap: 12,
     backgroundColor: Colors.gray50,
-    padding: 16,
+    padding: 4,
     borderRadius: 8,
     borderLeftWidth: 3,
     borderLeftColor: Colors.primary,
@@ -1090,9 +1256,19 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 20,
+    padding: 5,
     borderBottomWidth: 1,
     borderBottomColor: Colors.gray200,
+  },
+  modelSelectionModalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.gray200,
+    height: 64,
   },
   modalTitle: {
     fontSize: 18,
@@ -1107,7 +1283,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingVertical: 16,
-    paddingHorizontal: 20,
+    paddingHorizontal: 5,
     borderBottomWidth: 1,
     borderBottomColor: Colors.gray100,
   },
@@ -1136,7 +1312,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: Colors.gray100,
     borderRadius: 8,
-    paddingHorizontal: 16,
+    paddingHorizontal: 4,
     paddingVertical: 12,
   },
   keyInput: {
@@ -1161,8 +1337,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 16,
-    paddingHorizontal: 16,
+    paddingVertical: 0.5,
+    paddingHorizontal: 1,
     backgroundColor: Colors.white,
   },
   collapsibleHeaderLeft: {
@@ -1176,6 +1352,14 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: Colors.textPrimary,
   },
+  collapsibleContent: {
+    backgroundColor: Colors.gray50,
+    paddingVertical: 10,
+    paddingHorizontal: 8,
+    marginTop: 15,
+    borderTopWidth: 1,
+    borderTopColor: Colors.gray200,
+  },
   modelIndicator: {
     backgroundColor: Colors.primary,
     borderRadius: 12,
@@ -1187,18 +1371,11 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: Colors.white,
   },
-  collapsibleContent: {
-    backgroundColor: Colors.gray50,
-    paddingVertical: 16,
-    paddingHorizontal: 16,
-    borderTopWidth: 1,
-    borderTopColor: Colors.gray200,
-  },
   // Model Summary Styles
   modelSummary: {
     marginTop: 12,
     paddingVertical: 12,
-    paddingHorizontal: 16,
+    paddingHorizontal: 4,
     backgroundColor: Colors.gray50,
     borderRadius: 8,
     gap: 8,
