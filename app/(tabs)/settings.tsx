@@ -63,7 +63,7 @@ export default function SettingsScreen() {
   const [loadingCategories, setLoadingCategories] = useState(true);
   const [newCategoryName, setNewCategoryName] = useState('');
 
-  // Collapsible section state - track哪个区块展开，默认全部收起
+  // Collapsible section state - tracks which section is expanded, all collapsed by default
   const [expandedSection, setExpandedSection] = useState<string | null>(null);
 
   // Handler to toggle section expansion
@@ -1063,6 +1063,8 @@ export default function SettingsScreen() {
   );
 }
 
+const INPUT_HEIGHT = 44;
+
 const styles = StyleSheet.create({
     modelSelectionHeader: {
       flexDirection: 'row',
@@ -1130,9 +1132,10 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.gray100,
     borderRadius: 8,
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    height: INPUT_HEIGHT,
     fontSize: 15,
     color: Colors.textPrimary,
+    textAlignVertical: 'center',
   },
   row: {
     flexDirection: 'row',
@@ -1148,7 +1151,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.gray100,
     borderRadius: 8,
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    height: INPUT_HEIGHT,
   },
   selectText: {
     fontSize: 15,
@@ -1160,7 +1163,7 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.gray100,
     borderRadius: 8,
     paddingHorizontal: 16,
-    paddingVertical: 12,
+    height: INPUT_HEIGHT,
   },
   currencySymbol: {
     fontSize: 16,
@@ -1172,6 +1175,7 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 16,
     color: Colors.textPrimary,
+    textAlignVertical: 'center',
   },
   saveButton: {
     backgroundColor: Colors.textPrimary,
@@ -1223,8 +1227,9 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.gray100,
     borderRadius: 8,
     paddingHorizontal: 16,
-    paddingVertical: 10,
+    height: INPUT_HEIGHT,
     fontSize: 15,
+    textAlignVertical: 'center',
   },
   addButton: {
     backgroundColor: Colors.textPrimary,
@@ -1410,7 +1415,7 @@ const styles = StyleSheet.create({
     marginHorizontal: 16,
     marginVertical: 12,
     paddingHorizontal: 12,
-    paddingVertical: 10,
+    height: INPUT_HEIGHT,
     backgroundColor: Colors.gray100,
     borderRadius: 8,
     gap: 8,
@@ -1419,6 +1424,7 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 15,
     color: Colors.textPrimary,
+    textAlignVertical: 'center',
   },
   emptySearchContainer: {
     alignItems: 'center',
@@ -1472,17 +1478,20 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: Colors.gray100,
     borderRadius: 8,
-    paddingHorizontal: 4,
-    paddingVertical: 12,
+    paddingHorizontal: 16,
+    height: INPUT_HEIGHT,
   },
   keyInput: {
     flex: 1,
     fontSize: 15,
     color: Colors.textPrimary,
+    textAlignVertical: 'center',
+    // Remove padding here as it's on the container
   },
   keyVisibilityButton: {
-    padding: 8,
-    marginLeft: 8,
+    // The parent container handles alignment
+    padding: 8, // Restore padding for touch area
+    marginLeft: 4, // Slight margin
   },
   // Collapsible Section Styles
   collapsibleSection: {
