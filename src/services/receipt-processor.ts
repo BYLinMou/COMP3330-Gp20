@@ -11,6 +11,7 @@
 import { Platform } from 'react-native';
 import { getOpenAIConfig } from './openai-config';
 import { getCategories } from './categories';
+import { getCurrencies } from './currencies';
 
 /**
  * 收据数据结构
@@ -29,6 +30,7 @@ export interface ReceiptData {
   description?: string;    // 描述
   category?: string;       // 分类建议
   isNewCategory?: boolean; // 是否是新分类建议（不在现有分类列表中）
+  currency?: string;       // 货币代码 (USD, HKD, CNY, etc.)
 }
 
 /**
@@ -202,7 +204,8 @@ async function performOCR(imageBase64: string): Promise<OCRResult> {
  */
 async function analyzeReceiptWithMultimodalLLM(
   imageBase64: string,
-  existingCategories: string[]
+  existingCategories: string[],
+  availableCurrencies: string[]
 ): Promise<ReceiptData> {
   try {
     // 从 settings 读取用户配置
@@ -226,40 +229,58 @@ async function analyzeReceiptWithMultimodalLLM(
       ? existingCategories.join(', ') 
       : 'No existing categories';
     
-    const systemPrompt = `You are a professional receipt analysis expert. Your ONLY job is to analyze receipt images and return structured JSON data.
+    const currencyList = availableCurrencies.length > 0
+      ? availableCurrencies.join(', ')
+      : 'USD, HKD, CNY';
+    
+    const systemPrompt = `You are a professional receipt analysis expert. Your task is to extract structured data from receipt images with maximum accuracy.
 
-**CRITICAL REQUIREMENTS:**
-1. Return ONLY valid JSON - NO explanations, NO markdown, NO extra text
-2. Every single field must be present in your response
-3. The JSON must be valid and parseable
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+⚠️  CRITICAL OUTPUT REQUIREMENTS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-**EXACT REQUIRED STRUCTURE:**
+1. Return ONLY raw JSON - NO markdown code blocks, NO explanations, NO extra text
+2. Every field listed below MUST be present in your response
+3. JSON must be syntactically valid and directly parseable
+4. Use double quotes for all strings, proper number formatting
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📋 REQUIRED JSON STRUCTURE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
 {
-  "merchant": "store name",
-  "amount": 12.34,
-  "date": "2024-11-17T14:33",
+  "merchant": "Store Name",
+  "amount": 45.67,
+  "currency": "USD",
+  "date": "2024-11-17T14:30",
   "items": [
-    {"name": "item1", "amount": 1, "price": 5.00},
-    {"name": "item2", "amount": 2, "price": 3.50}
+    {"name": "Item Name", "amount": 2, "price": 12.50},
+    {"name": "Another Item", "amount": 1, "price": 20.67}
   ],
-  "description": "short summary",
+  "description": "Brief purchase summary",
   "category": "category name",
   "isNewCategory": false
 }
 
-**FIELD RULES:**
-- merchant (required, string): The store/restaurant name. Extract from receipt header or footer.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📖 FIELD EXTRACTION RULES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+- currency (required, string): Choose the currency code from the available list below.
+  Extract from receipt symbols, text, or context. If unclear, use null or best guess.
+  Available: ${currencyList}
 - amount (required, number): Total bill amount as a decimal (e.g., 12.34). NOT a string.
 - date (required, string): ISO format YYYY-MM-DDTHH:MM. Use 24-hour time. If missing, use 12:00.
+- category (required, string): Choose from list below, or suggest new one
+  Available: ${categoryList}
+- isNewCategory (required, boolean): true if you suggested new category, false otherwise
 - items (required, array): Individual line items as objects with EXACT structure: 
   {name: "item name", amount: quantity (number), price: unit price (number)}
   If receipt shows "2 x $3.50", then amount=2, price=3.50
   If item quantity unclear, use amount=1
   Return empty array [] if no items visible
+- merchant (required, string): The store/restaurant name. Extract from receipt header or footer.
 - description (required, string): Brief (1-2 sentence) summary of purchase
-- category (required, string): Choose from list below, or suggest new one
-  Available: ${categoryList}
-- isNewCategory (required, boolean): true if you suggested new category, false otherwise
 
 **RESPONSE FORMAT:**
 Output NOTHING but the JSON object. No markdown formatting, no backticks, no explanation.
@@ -431,6 +452,14 @@ function sanitizeReceiptData(data: any, existingCategories: string[]): ReceiptDa
   const category = String(data.category || 'Other').trim();
   const isNewCategory = data.isNewCategory === true || !existingCategories.includes(category);
   
+  // 处理 currency - 验证并提供默认值
+  let currency = String(data.currency || 'USD').trim().toUpperCase();
+  const validCurrencies = ['USD', 'HKD', 'CNY', 'EUR', 'GBP', 'JPY', 'CAD', 'AUD'];
+  if (!validCurrencies.includes(currency)) {
+    console.warn('[Receipt Processor] Invalid currency:', currency, '- defaulting to USD');
+    currency = 'USD';
+  }
+  
   // 处理 items - 新格式是对象数组
   let items: ReceiptItem[] = [];
   if (Array.isArray(data.items)) {
@@ -463,6 +492,7 @@ function sanitizeReceiptData(data: any, existingCategories: string[]): ReceiptDa
     description: String(data.description || '').trim(),
     category: category,
     isNewCategory: isNewCategory,
+    currency: currency,
   };
 }
 
@@ -560,14 +590,24 @@ export async function processReceiptImage(
     });
     // const ocrResult = await performOCR(base64Image); // 暂时跳过
 
-    // 步骤 3: 获取现有分类列表
+    // 步骤 3: 获取现有分类列表和货币列表
     let existingCategories: string[] = [];
+    let availableCurrencies: string[] = [];
     try {
       const categories = await getCategories();
       existingCategories = categories.map(c => c.name);
       console.log('[Receipt Processor] Loaded existing categories:', existingCategories);
     } catch (error) {
       console.warn('[Receipt Processor] Failed to load categories, proceeding without them:', error);
+    }
+    
+    try {
+      const currencies = await getCurrencies();
+      availableCurrencies = currencies.map(c => c.code);
+      console.log('[Receipt Processor] Loaded available currencies:', availableCurrencies);
+    } catch (error) {
+      console.warn('[Receipt Processor] Failed to load currencies, using defaults:', error);
+      availableCurrencies = ['USD', 'HKD', 'CNY'];
     }
 
     // 步骤 4: 使用多模态 LLM 直接分析
@@ -576,7 +616,7 @@ export async function processReceiptImage(
       message: 'Analyzing receipt with AI...',
       progress: 50,
     });
-    const receiptData = await analyzeReceiptWithMultimodalLLM(base64Image, existingCategories);
+    const receiptData = await analyzeReceiptWithMultimodalLLM(base64Image, existingCategories, availableCurrencies);
 
     // 步骤 5: 完成
     onProgress?.({

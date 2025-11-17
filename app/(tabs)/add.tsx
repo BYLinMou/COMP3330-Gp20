@@ -8,10 +8,11 @@ import * as ImagePicker from 'expo-image-picker';
 import { Colors } from '../../constants/theme';
 import { addTransaction } from '../../src/services/transactions';
 import { getCategories, addCategory, subscribeToCategoryChanges, type Category } from '../../src/services/categories';
+import { getCurrencies, type Currency } from '../../src/services/currencies';
 import { processReceiptImage, type ReceiptData, type ProcessingProgress } from '../../src/services/receipt-processor';
 import { useAuth } from '../../src/providers/AuthProvider';
 
-type InputMethod = 'manual' | 'receipt' | 'voice';
+type InputMethod = 'manual' | 'receipt';
 
 interface ReceiptItem {
   name: string;
@@ -28,15 +29,18 @@ export default function AddScreen() {
   const [merchant, setMerchant] = useState('');
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [notes, setNotes] = useState('');
+  const [selectedCurrency, setSelectedCurrency] = useState('');
   
   // Categories and loading states
   const [categories, setCategories] = useState<Category[]>([]);
+  const [currencyOptions, setCurrencyOptions] = useState<Currency[]>([]);
   const [loadingCategories, setLoadingCategories] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [processingReceipt, setProcessingReceipt] = useState(false);
   
   // Modal states
   const [showCategoryModal, setShowCategoryModal] = useState(false);
+  const [showCurrencyModal, setShowCurrencyModal] = useState(false);
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showTimePicker, setShowTimePicker] = useState(false);
   const [showNewCategoryModal, setShowNewCategoryModal] = useState(false);
@@ -63,6 +67,7 @@ export default function AddScreen() {
   // Load categories on mount and subscribe to realtime changes
   useEffect(() => {
     loadCategories();
+    loadCurrencies();
   }, []);
 
   // Subscribe to category changes for realtime updates
@@ -112,6 +117,16 @@ export default function AddScreen() {
       console.error('Failed to load categories:', error);
     } finally {
       setLoadingCategories(false);
+    }
+  };
+
+  const loadCurrencies = async () => {
+    try {
+      const data = await getCurrencies();
+      setCurrencyOptions(data);
+      console.log('[Add] Loaded currencies:', data);
+    } catch (error) {
+      console.error('Failed to load currencies:', error);
     }
   };
 
@@ -244,6 +259,12 @@ export default function AddScreen() {
       setMerchant(receiptData.merchant);
       setAmount(receiptData.amount.toString());
       
+      // 设置货币（如果 AI 检测到）
+      if (receiptData.currency) {
+        setSelectedCurrency(receiptData.currency);
+        console.log('[Add Screen] Currency detected:', receiptData.currency);
+      }
+      
       // 如果是字符串数组（旧格式），转换为 ReceiptItem 数组
       if (receiptData.items && Array.isArray(receiptData.items) && receiptData.items.length > 0) {
         const firstItem = receiptData.items[0];
@@ -345,8 +366,6 @@ export default function AddScreen() {
       let source: 'manual' | 'ocr' | 'ai' = 'manual';
       if (inputMethod === 'receipt') {
         source = 'ocr';
-      } else if (inputMethod === 'voice') {
-        source = 'ai';
       }
 
       // 构建商家名称
@@ -531,28 +550,6 @@ export default function AddScreen() {
               Receipt
             </Text>
           </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[
-              styles.methodButton,
-              inputMethod === 'voice' && styles.methodButtonActive,
-            ]}
-            onPress={() => setInputMethod('voice')}
-          >
-            <Ionicons
-              name="mic-outline"
-              size={32}
-              color={inputMethod === 'voice' ? Colors.white : Colors.textSecondary}
-            />
-            <Text
-              style={[
-                styles.methodLabel,
-                inputMethod === 'voice' && styles.methodLabelActive,
-              ]}
-            >
-              Voice
-            </Text>
-          </TouchableOpacity>
         </View>
 
         {/* Receipt Upload Area */}
@@ -593,13 +590,21 @@ export default function AddScreen() {
         <View style={styles.card}>
           <Text style={styles.sectionTitle}>Transaction Details</Text>
 
-          {/* Amount */}
+          {/* Amount with Inline Currency Selector */}
           <View style={styles.inputGroup}>
             <Text style={styles.inputLabel}>
               Amount <Text style={styles.required}>*</Text>
             </Text>
             <View style={styles.amountInput}>
-              <Text style={styles.currencySymbol}>$</Text>
+              <TouchableOpacity
+                style={styles.currencySelector}
+                onPress={() => setShowCurrencyModal(true)}
+              >
+                <Text style={styles.currencySymbol}>
+                  {selectedCurrency ? currencyOptions.find(c => c.code === selectedCurrency)?.symbol : '$'}
+                </Text>
+                <Ionicons name="chevron-down" size={16} color={Colors.textSecondary} />
+              </TouchableOpacity>
               <TextInput
                 style={styles.amountField}
                 placeholder="0.00"
@@ -608,8 +613,10 @@ export default function AddScreen() {
                 onChangeText={setAmount}
                 editable={itemlist.length === 0} // Read-only if items present
               />
-              <Ionicons name="chevron-down" size={20} color={Colors.textSecondary} />
             </View>
+            <Text style={styles.currencySubtext}>
+              Amount is automatically calculated from item list. If you enter a value manually, it will override the auto-calculation (useful for discounts or custom totals).
+            </Text>
           </View>
 
           {/* Date & Time (occurred_at) */}
@@ -918,6 +925,54 @@ export default function AddScreen() {
         </View>
       </Modal>
 
+      {/* Currency Selection Modal */}
+      <Modal
+        visible={showCurrencyModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowCurrencyModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Select Currency</Text>
+              <TouchableOpacity onPress={() => setShowCurrencyModal(false)}>
+                <Ionicons name="close" size={24} color={Colors.textPrimary} />
+              </TouchableOpacity>
+            </View>
+            
+            <ScrollView style={styles.modalList}>
+              {currencyOptions.map((currency) => (
+                <TouchableOpacity
+                  key={currency.code}
+                  style={[
+                    styles.modalItem,
+                    selectedCurrency === currency.code && styles.modalItemSelected
+                  ]}
+                  onPress={() => {
+                    setSelectedCurrency(currency.code);
+                    setShowCurrencyModal(false);
+                  }}
+                >
+                  <View>
+                    <Text style={[
+                      styles.modalItemText,
+                      selectedCurrency === currency.code && styles.modalItemTextSelected
+                    ]}>
+                      {currency.symbol} {currency.code}
+                    </Text>
+                    <Text style={styles.currencySubtext}>{currency.name}</Text>
+                  </View>
+                  {selectedCurrency === currency.code && (
+                    <Ionicons name="checkmark" size={20} color={Colors.primary} />
+                  )}
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
       {/* New Category Confirmation Modal */}
       <Modal
         visible={showNewCategoryModal}
@@ -1098,19 +1153,28 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: Colors.gray100,
     borderRadius: 8,
-    paddingHorizontal: 16,
+    paddingHorizontal: 12,
     paddingVertical: 12,
+  },
+  currencySelector: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 8,
+    marginRight: 4,
+    borderRadius: 6,
+    gap: 4,
   },
   currencySymbol: {
     fontSize: 16,
     fontWeight: '600',
     color: Colors.textSecondary,
-    marginRight: 8,
   },
   amountField: {
     flex: 1,
     fontSize: 16,
     color: Colors.textPrimary,
+    paddingHorizontal: 4,
   },
   textInput: {
     backgroundColor: Colors.gray100,
@@ -1430,5 +1494,11 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: Colors.textPrimary,
+  },
+  currencySubtext: {
+    fontSize: 13,
+    color: Colors.textSecondary,
+    marginTop: 2,
+    marginLeft: 4,
   },
 });
