@@ -5,7 +5,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Colors } from '../constants/theme';
 import { sendChatCompletion, ChatMessage } from '../src/services/openai-client';
-import { allTools, SYSTEM_PROMPT, Tool } from '../src/services/chat-tools';
+import { allTools, SYSTEM_PROMPT, Tool, parseMultipleToolCalls, isValidToolName } from '../src/services/chat-tools';
 
 interface FloatingChatButtonProps {
   onPress?: () => void;
@@ -131,13 +131,26 @@ export default function FloatingChatButton({ onPress }: FloatingChatButtonProps)
 
       try {
         // Prepare messages for AI
+        // Filter out tool call messages and replace with execution summary
         const chatMessages: ChatMessage[] = [
           { role: 'system', content: SYSTEM_PROMPT },
-          ...updatedMessages.map(m => ({
-            role: m.isUser ? 'user' as const : 'assistant' as const,
-            content: m.isAIExplanation ? m.text : m.isToolCall ? `Tool call: ${m.toolCall?.name}` : m.text
-          })),
-          { role: 'user', content: inputText }
+          ...updatedMessages.map(m => {
+            if (m.isToolCall && m.toolCall) {
+              // If the tool call has been executed with a result, include that context
+              if (m.toolCall.result) {
+                return {
+                  role: 'assistant' as const,
+                  content: `[Tool executed: ${m.toolCall.name} - Result: ${JSON.stringify(m.toolCall.result)}]`
+                };
+              }
+              // If tool call is still pending or failed, skip it from context
+              return null;
+            }
+            return {
+              role: m.isUser ? 'user' as const : 'assistant' as const,
+              content: m.isAIExplanation ? m.text : m.text
+            };
+          }).filter(Boolean) as ChatMessage[]
         ];
 
         // Call OpenAI WITHOUT tools parameter - let AI return JSON format
@@ -147,53 +160,59 @@ export default function FloatingChatButton({ onPress }: FloatingChatButtonProps)
         });
 
         const aiContent = response.choices[0].message.content || '';
+        console.log('FloatingChatButton: AI response content:', aiContent);
 
-        // Try to parse JSON format from AI response
-        let toolCallData: { explanation: string; toolName: string; parameters: any } | null = null;
-        try {
-          // Extract JSON from markdown code blocks if present
-          const jsonMatch = aiContent.match(/```json\n([\s\S]*?)\n```/);
-          const jsonString = jsonMatch ? jsonMatch[1] : aiContent;
-          const parsed = JSON.parse(jsonString);
-          if (parsed.explanation && parsed.toolName && parsed.parameters) {
-            toolCallData = parsed;
-          }
-        } catch (e) {
-          // Not a tool call, just a regular message
-        }
+        // Parse all tool calls from AI response (supports agent chaining)
+        const toolCalls = parseMultipleToolCalls(aiContent);
+        console.log('FloatingChatButton: Parsed tool calls:', toolCalls);
 
-        if (toolCallData) {
-          const tool = allTools.find(t => t.name === toolCallData!.toolName);
-          
-          if (tool) {
-            // 第一个气泡：AI的解释
+        if (toolCalls.length > 0) {
+          // AI returned one or more tool calls
+          // Display all of them as pending confirmations
+          for (let i = 0; i < toolCalls.length; i++) {
+            const toolCallData = toolCalls[i];
+            
+            // Show AI's explanation
             const explanationMessage: Message = {
-              id: (Date.now()).toString(),
+              id: (Date.now() + i * 1000).toString(),
               text: toolCallData.explanation,
               isUser: false,
               isAIExplanation: true,
             };
             setMessages(prev => [...prev, explanationMessage]);
-            scrollToEnd();
-
-            // 第二个气泡：工具调用待确认
-            const toolCallMessage: Message = {
-              id: (Date.now() + 1).toString(),
-              text: 'Pending confirmation',
-              isUser: false,
-              isToolCall: true,
-              toolCall: {
-                name: tool.name,
-                arguments: toolCallData.parameters,
-                isExpanded: true,
-                isExecuting: false,
+            
+            // Only show tool confirmation for valid tools
+            if (isValidToolName(toolCallData.toolName)) {
+              const tool = allTools.find(t => t.name === toolCallData.toolName);
+              if (tool) {
+                const toolCallMessage: Message = {
+                  id: (Date.now() + i * 1000 + 1).toString(),
+                  text: 'Pending confirmation',
+                  isUser: false,
+                  isToolCall: true,
+                  toolCall: {
+                    name: tool.name,
+                    arguments: toolCallData.parameters,
+                    isExpanded: true,
+                    isExecuting: false,
+                  }
+                };
+                setMessages(prev => [...prev, toolCallMessage]);
               }
-            };
-            setMessages(prev => [...prev, toolCallMessage]);
-            scrollToEnd();
+            } else {
+              // Invalid tool name - show as regular message
+              console.warn(`Tool "${toolCallData.toolName}" not found.`);
+              const invalidToolMessage: Message = {
+                id: (Date.now() + i * 1000 + 1).toString(),
+                text: `⚠️ Tool not found: ${toolCallData.toolName}`,
+                isUser: false,
+              };
+              setMessages(prev => [...prev, invalidToolMessage]);
+            }
           }
+          scrollToEnd();
         } else {
-          // Regular message response
+          // Regular message response (no tool calls detected)
           const aiResponse: Message = {
             id: (Date.now() + 1).toString(),
             text: aiContent || 'I received your message.',
@@ -259,61 +278,38 @@ export default function FloatingChatButton({ onPress }: FloatingChatButtonProps)
         }));
         scrollToEnd();
 
-        // Get the current messages state and send tool result to AI for a response
-        setMessages(prevMessages => {
-          // Build the context with all previous messages
-          const allMessages = prevMessages.map(m => ({
-            role: m.isUser ? 'user' as const : 'assistant' as const,
-            content: m.isAIExplanation ? m.text : m.isToolCall ? `Tool call: ${m.toolCall?.name}` : m.text
-          }));
+        // Check if there are other pending tool calls to execute (agent chaining)
+        const updatedMessages = messages.map(msg => 
+          msg.id === messageId && msg.toolCall 
+            ? {
+                ...msg,
+                toolCall: {
+                  ...msg.toolCall,
+                  isExecuting: false,
+                  result,
+                  isExpanded: false,
+                }
+              }
+            : msg
+        );
 
-          // Add the tool result as a new message context
-          const toolResultContext: ChatMessage[] = [
-            { role: 'system', content: SYSTEM_PROMPT },
-            ...allMessages,
-            { 
-              role: 'user', 
-              content: `Tool execution completed: ${message.toolCall!.name}\nResult: ${JSON.stringify(result, null, 2)}\n\nPlease provide a helpful summary or explanation of what was found.`
-            }
-          ];
+        const pendingToolCalls = updatedMessages.filter(
+          m => m.isToolCall && m.toolCall && !m.toolCall.result && !m.toolCall.error
+        );
 
-          // Send to AI and handle response
-          (async () => {
-            setIsLoading(true);
-            scrollToEnd();
-            
-            try {
-              const aiResponse = await sendChatCompletion({
-                messages: toolResultContext,
-                temperature: 0.7,
-                max_tokens: 500
-              });
-
-              // 第三个气泡：工具执行后AI的回应
-              const aiSummary: Message = {
-                id: (Date.now() + 2).toString(),
-                text: aiResponse.choices[0].message.content || 'Tool executed successfully.',
-                isUser: false,
-              };
-              setMessages(prev => [...prev, aiSummary]);
-              scrollToEnd();
-            } catch (aiError) {
-              console.error('Error getting AI response for tool result:', aiError);
-              // Still show success even if AI response fails
-              const successMessage: Message = {
-                id: (Date.now() + 2).toString(),
-                text: `Tool executed successfully. Result: ${JSON.stringify(result, null, 2)}`,
-                isUser: false,
-              };
-              setMessages(prev => [...prev, successMessage]);
-              scrollToEnd();
-            } finally {
-              setIsLoading(false);
-            }
-          })();
-
-          return prevMessages;
-        });
+        if (pendingToolCalls.length > 0) {
+          // There are more tool calls to execute - automatically execute the next one
+          const nextToolCall = pendingToolCalls[0];
+          if (nextToolCall.id) {
+            // Use setTimeout to give UI a chance to update
+            setTimeout(() => {
+              confirmToolCall(nextToolCall.id);
+            }, 500);
+          }
+        } else {
+          // All tool calls have been executed - send final AI response
+          sendToolChainResultToAI(updatedMessages, result, message.toolCall!.name);
+        }
       }
     } catch (error) {
       console.error('Error executing tool:', error);
@@ -332,6 +328,106 @@ export default function FloatingChatButton({ onPress }: FloatingChatButtonProps)
       }));
       setIsLoading(false);
     }
+  };
+
+  const sendToolChainResultToAI = (messagesState: Message[], result: any, toolName: string) => {
+    // Build the context with all messages including tool results
+    const allMessages = messagesState.map(m => ({
+      role: m.isUser ? 'user' as const : 'assistant' as const,
+      content: m.isAIExplanation ? m.text : m.isToolCall && m.toolCall?.result ? `Tool ${m.toolCall.name} executed with result: ${JSON.stringify(m.toolCall.result)}` : m.text
+    }));
+
+    // Prepare context for AI - show the tool result and let AI decide what to do next
+    // AI can either: 1) Call more tools if needed, or 2) Provide a summary
+    const toolResultContext: ChatMessage[] = [
+      { role: 'system', content: SYSTEM_PROMPT },
+      ...allMessages,
+      { 
+        role: 'user', 
+        content: `Tool executed: "${toolName}" with result: ${JSON.stringify(result, null, 2)}\n\nBased on this result, you can either:\n1. Call another tool if needed using the JSON format\n2. Provide a helpful summary if the task is complete`
+      }
+    ];
+
+    // Send to AI and handle response
+    (async () => {
+      setIsLoading(true);
+      scrollToEnd();
+      
+      try {
+        const aiResponse = await sendChatCompletion({
+          messages: toolResultContext,
+          temperature: 0.7,
+          max_tokens: 500
+        });
+
+        const aiContent = aiResponse.choices[0].message.content || '';
+        console.log('FloatingChatButton: Tool chain AI response content:', aiContent);
+
+        // Check if AI wants to call more tools
+        const moreToolCalls = parseMultipleToolCalls(aiContent);
+        console.log('FloatingChatButton: Tool chain parsed tool calls:', moreToolCalls);
+
+        if (moreToolCalls.length > 0) {
+          // AI wants to continue with more tool calls - add them as new pending confirmations
+          console.log(`AI wants to execute ${moreToolCalls.length} more tool calls`);
+          
+          for (let i = 0; i < moreToolCalls.length; i++) {
+            const toolCallData = moreToolCalls[i];
+            
+            // Show AI's explanation
+            const explanationMessage: Message = {
+              id: (Date.now() + i * 1000).toString(),
+              text: toolCallData.explanation,
+              isUser: false,
+              isAIExplanation: true,
+            };
+            setMessages(prev => [...prev, explanationMessage]);
+            
+            // Show tool confirmation for valid tools
+            if (isValidToolName(toolCallData.toolName)) {
+              const tool = allTools.find(t => t.name === toolCallData.toolName);
+              if (tool) {
+                const toolCallMessage: Message = {
+                  id: (Date.now() + i * 1000 + 1).toString(),
+                  text: 'Pending confirmation',
+                  isUser: false,
+                  isToolCall: true,
+                  toolCall: {
+                    name: tool.name,
+                    arguments: toolCallData.parameters,
+                    isExpanded: true,
+                    isExecuting: false,
+                  }
+                };
+                setMessages(prev => [...prev, toolCallMessage]);
+              }
+            }
+          }
+          scrollToEnd();
+        } else {
+          // AI decided to provide summary/response instead of more tool calls
+          const aiSummary: Message = {
+            id: (Date.now() + 2).toString(),
+            text: aiContent || 'Tool executed successfully.',
+            isUser: false,
+          };
+          setMessages(prev => [...prev, aiSummary]);
+          scrollToEnd();
+        }
+      } catch (aiError) {
+        console.error('Error getting AI response after tool execution:', aiError);
+        // Still show success even if AI response fails
+        const successMessage: Message = {
+          id: (Date.now() + 2).toString(),
+          text: `Tool executed successfully.`,
+          isUser: false,
+        };
+        setMessages(prev => [...prev, successMessage]);
+        scrollToEnd();
+      } finally {
+        setIsLoading(false);
+      }
+    })();
   };
 
   const closeModal = () => {
@@ -559,7 +655,7 @@ const styles = StyleSheet.create({
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    backgroundColor: 'rgba(0, 0, 0, 0.35)',
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -601,7 +697,7 @@ const styles = StyleSheet.create({
   },
   aiMessage: {
     alignSelf: 'flex-start',
-    backgroundColor: Colors.gray200,
+    backgroundColor: Colors.gray250,
     width: '80%',
   },
   messageText: {
@@ -654,7 +750,7 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     width: '80%',
     alignSelf: 'flex-start',
-    backgroundColor: Colors.gray200,
+    backgroundColor: Colors.gray250,
   },
   toolCallHeader: {
     flexDirection: 'row',
