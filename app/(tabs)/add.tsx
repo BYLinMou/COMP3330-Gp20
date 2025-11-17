@@ -261,8 +261,8 @@ export default function AddScreen() {
   };
 
   /**
-   * 处理收据图片：调用独立的收据处理器
-   * @param imageUri - 图片的本地 URI
+   * Process receipt image: call the independent receipt processor
+   * @param imageUri - Local URI of the image
    */
   const handleReceiptImageProcessing = async (imageUri: string) => {
     try {
@@ -277,17 +277,17 @@ export default function AddScreen() {
       console.log('[Add Screen] isNewCategory:', receiptData.isNewCategory);
       console.log('[Add Screen] category:', receiptData.category);
 
-      // 自动填充表单
+      // Auto-fill the form
       setMerchant(receiptData.merchant);
       setAmount(receiptData.amount.toString());
       
-      // 设置货币（如果 AI 检测到）
+      // Set currency (if detected by AI)
       if (receiptData.currency) {
         setSelectedCurrency(receiptData.currency);
         console.log('[Add Screen] Currency detected:', receiptData.currency);
       }
       
-      // 设置支付方式（如果 AI 检测到）
+      // Set payment method (if detected by AI)
       if (receiptData.payment_method) {
         setSelectedPaymentMethod(receiptData.payment_method);
         console.log('[Add Screen] Payment method detected:', receiptData.payment_method);
@@ -510,9 +510,6 @@ export default function AddScreen() {
             )}
           </View>
         )}
-
-        {/* Add Transaction Title */}
-        <Text style={styles.pageTitle}>Add Transaction</Text>
 
         {/* Input Method Selector */}
         <View style={styles.methodSelector}>

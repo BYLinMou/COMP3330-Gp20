@@ -62,6 +62,7 @@ export default function SettingsScreen() {
   const [receiptSearchFocused, setReceiptSearchFocused] = useState(false);
   const [chatSearchFocused, setChatSearchFocused] = useState(false);
   const [fallbackSearchFocused, setFallbackSearchFocused] = useState(false);
+  const [fetchedModelsCount, setFetchedModelsCount] = useState(0);
 
   // Categories state
   const [categories, setCategories] = useState<Category[]>([]);
@@ -212,12 +213,13 @@ export default function SettingsScreen() {
       setLoadingModels(true);
       const models = await fetchOpenAIModels(openaiUrl, openaiKey);
       
-      // 显示所有模型，不进行过滤
+      // Display all models without filtering
       setAvailableModels(models);
-      Alert.alert('Success', `Found ${models.length} available models`);
+      setFetchedModelsCount(models.length);
     } catch (error: any) {
       Alert.alert('Connection Failed', error.message || 'Failed to fetch models');
       setAvailableModels([]);
+      setFetchedModelsCount(0);
     } finally {
       setLoadingModels(false);
     }
@@ -525,6 +527,11 @@ export default function SettingsScreen() {
                         <Text style={styles.signOutPillText}>Fetch Available Models</Text>
                         {loadingModels && <ActivityIndicator color={Colors.white} style={{ marginLeft: 8 }} />}
                       </TouchableOpacity>
+                      {fetchedModelsCount > 0 && (
+                        <View style={[styles.versionPill, { marginTop: 12 }]}>
+                          <Text style={styles.versionPillText}>Found {fetchedModelsCount} models</Text>
+                        </View>
+                      )}
                     </View>
 
                     {/* Model Selection UI - Always show if we have models or previously selected models */}
@@ -703,7 +710,7 @@ export default function SettingsScreen() {
                 <Text style={styles.privacyText}>
                   Your data is encrypted and securely stored. We never share your personal financial information with third parties.
                 </Text>
-                <Text style={styles.backupText}>Last backup: Today at 3:24 PM</Text>
+                {/* <Text style={styles.backupText}>Last backup: Today at 3:24 PM</Text> */}
               </View>
             </View>
           )}
