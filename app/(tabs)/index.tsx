@@ -12,6 +12,7 @@ import {
   type Transaction 
 } from '../../src/services/transactions';
 import { useAuth } from '../../src/providers/AuthProvider';
+import FloatingChatButton from '../../components/floating-chat-button';
 
 const { width } = Dimensions.get('window');
 
@@ -303,6 +304,9 @@ export default function HomeScreen() {
 
         <View style={{ height: 20 }} />
       </ScrollView>
+
+      {/* Floating Chat Button */}
+      <FloatingChatButton />
     </SafeAreaView>
   );
 }

@@ -14,6 +14,7 @@ import { getPaymentMethods, type PaymentMethod } from '../../src/services/paymen
 import { processReceiptImage, type ReceiptData, type ProcessingProgress } from '../../src/services/receipt-processor';
 import { useAuth } from '../../src/providers/AuthProvider';
 import { TextInput as GestureTextInput } from 'react-native-gesture-handler';
+import FloatingChatButton from '../../components/floating-chat-button';
 
 type InputMethod = 'manual' | 'receipt';
 
@@ -1192,6 +1193,8 @@ export default function AddScreen() {
         </View>
       </Modal>
 
+      {/* Floating Chat Button */}
+      <FloatingChatButton />
     </SafeAreaView>
   );
 }

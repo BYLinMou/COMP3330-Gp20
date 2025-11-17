@@ -14,6 +14,7 @@ import {
   type OpenAIConfig,
   type OpenAIModel 
 } from '../../src/services/openai-config';
+import FloatingChatButton from '../../components/floating-chat-button';
 import {
   getCategories,
   addCategory,
@@ -505,7 +506,7 @@ export default function SettingsScreen() {
                       size={20} 
                       color={Colors.primary} 
                     />
-                    <Text style={styles.collapsibleHeaderTitle}>Primary Models & Fallback</Text>
+                    <Text style={styles.collapsibleHeaderTitle}>Primary & Fallback Models</Text>
                   </View>
                   {(receiptModel || chatModel || fallbackModel) && (
                     <View style={styles.modelIndicator}>
@@ -1256,6 +1257,9 @@ export default function SettingsScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* Floating Chat Button */}
+      <FloatingChatButton />
     </SafeAreaView>
   );
 }

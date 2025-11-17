@@ -9,6 +9,7 @@ export default function TabsLayout() {
         headerShown: false,
         tabBarActiveTintColor: Colors.tabIconSelected,
         tabBarInactiveTintColor: Colors.tabIconDefault,
+        tabBarShowLabel: false,
         tabBarStyle: {
           backgroundColor: Colors.white,
           borderTopWidth: 1,

@@ -4,6 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../constants/theme';
+import FloatingChatButton from '../../components/floating-chat-button';
 
 export default function PetScreen() {
   const happiness = 85;
@@ -24,6 +25,14 @@ export default function PetScreen() {
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+        {/* Pet Speech Bubble */}
+        <View style={styles.speechBubbleContainer}>
+          <View style={styles.speechBubble}>
+            <Text style={styles.speechText}>You're building wonderful money habits! 💖</Text>
+            <View style={styles.bubblePointer} />
+          </View>
+        </View>
+
         {/* Pet Character Card */}
         <View style={styles.petCard}>
           {/* Pet Avatar */}
@@ -34,15 +43,9 @@ export default function PetScreen() {
           </View>
 
           {/* Pet Info */}
-          <Text style={styles.petName}>Aura</Text>
-          <Text style={styles.petLevel}>Level 3 Financial Mentor</Text>
-
-          {/* Encouragement Message */}
-          <View style={styles.messageBox}>
-            <Text style={styles.messageText}>You're building wonderful money habits! 💖</Text>
-            <TouchableOpacity style={styles.dismissButton}>
-              <Text style={styles.dismissText}>Dismiss</Text>
-            </TouchableOpacity>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.petName}>Aura</Text>
+            <Text style={styles.petLevel}>Level 3 Financial Mentor</Text>
           </View>
         </View>
 
@@ -154,10 +157,8 @@ export default function PetScreen() {
         <View style={{ height: 20 }} />
       </ScrollView>
 
-      {/* Floating Action Button */}
-      <TouchableOpacity style={styles.fab}>
-        <Ionicons name="chatbubble-ellipses" size={28} color={Colors.white} />
-      </TouchableOpacity>
+      {/* Floating Chat Button */}
+      <FloatingChatButton />
     </SafeAreaView>
   );
 }
@@ -171,71 +172,85 @@ const styles = StyleSheet.create({
     flex: 1,
     padding: 16,
   },
+  speechBubbleContainer: {
+    marginBottom: 16,
+    alignItems: 'flex-start',
+    paddingRight: 40,
+  },
+  speechBubble: {
+    backgroundColor: Colors.primary,
+    borderRadius: 16,
+    padding: 12,
+    shadowColor: Colors.black,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  speechText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: Colors.white,
+    lineHeight: 20,
+  },
+  bubblePointer: {
+    position: 'absolute',
+    bottom: -8,
+    left: 16,
+    width: 0,
+    height: 0,
+    borderLeftWidth: 8,
+    borderRightWidth: 0,
+    borderTopWidth: 8,
+    borderLeftColor: 'transparent',
+    borderRightColor: 'transparent',
+    borderTopColor: Colors.primary,
+  },
   petCard: {
     backgroundColor: Colors.white,
-    borderRadius: 20,
-    padding: 24,
-    marginBottom: 16,
+    borderRadius: 16,
+    padding: 12,
+    marginBottom: 12,
+    flexDirection: 'row',
     alignItems: 'center',
+    gap: 12,
     shadowColor: Colors.black,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 12,
-    elevation: 3,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
   },
   petAvatarContainer: {
-    marginBottom: 16,
+    marginBottom: 0,
   },
   petAvatar: {
-    width: 160,
-    height: 160,
-    borderRadius: 80,
+    width: 80,
+    height: 80,
+    borderRadius: 40,
     backgroundColor: Colors.gray100,
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth: 4,
+    borderWidth: 2,
     borderColor: Colors.white,
     shadowColor: Colors.black,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 8,
-    elevation: 4,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
   },
   petEmoji: {
-    fontSize: 80,
+    fontSize: 44,
   },
   petName: {
-    fontSize: 28,
+    fontSize: 18,
     fontWeight: 'bold',
     color: Colors.primary,
-    marginBottom: 4,
+    marginBottom: 2,
   },
   petLevel: {
-    fontSize: 16,
+    fontSize: 13,
     color: Colors.textSecondary,
-    marginBottom: 20,
-  },
-  messageBox: {
-    backgroundColor: Colors.gray50,
-    borderRadius: 12,
-    padding: 16,
-    width: '100%',
-    borderWidth: 1,
-    borderColor: Colors.gray200,
-  },
-  messageText: {
-    fontSize: 15,
-    color: Colors.textPrimary,
-    textAlign: 'center',
-    marginBottom: 12,
-  },
-  dismissButton: {
-    alignSelf: 'center',
-  },
-  dismissText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: Colors.primary,
+    marginBottom: 0,
   },
   card: {
     backgroundColor: Colors.white,
@@ -252,7 +267,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    marginBottom: 20,
+    marginBottom: 12,
   },
   cardTitle: {
     fontSize: 18,
@@ -262,8 +277,8 @@ const styles = StyleSheet.create({
   statusItem: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: 8,
-    marginTop: 12,
+    marginBottom: 4,
+    marginTop: 8,
   },
   statusLabel: {
     fontSize: 15,
@@ -298,8 +313,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginTop: 16,
-    paddingTop: 16,
+    marginTop: 8,
+    paddingTop: 8,
     borderTopWidth: 1,
     borderTopColor: Colors.gray200,
   },
@@ -320,7 +335,7 @@ const styles = StyleSheet.create({
   timerCard: {
     backgroundColor: Colors.gray200,
     borderRadius: 12,
-    padding: 16,
+    padding: 12,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -336,26 +351,26 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: Colors.textSecondary,
     textAlign: 'center',
-    marginBottom: 16,
-    paddingHorizontal: 20,
+    marginBottom: 12,
+    paddingHorizontal: 16,
   },
   shopSubtitle: {
     fontSize: 14,
     color: Colors.textSecondary,
-    marginBottom: 16,
+    marginBottom: 12,
   },
   outfitItem: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 16,
+    paddingVertical: 8,
     borderBottomWidth: 1,
     borderBottomColor: Colors.gray100,
   },
   outfitLeft: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 8,
     flex: 1,
   },
   outfitInfo: {
@@ -365,15 +380,15 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '600',
     color: Colors.textPrimary,
-    marginBottom: 2,
+    marginBottom: 1,
   },
   outfitXP: {
     fontSize: 13,
     color: Colors.textSecondary,
   },
   outfitButton: {
-    paddingHorizontal: 20,
-    paddingVertical: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 6,
     borderRadius: 8,
     backgroundColor: Colors.white,
     borderWidth: 1,
@@ -398,20 +413,5 @@ const styles = StyleSheet.create({
   outfitButtonTextLocked: {
     color: Colors.gray400,
   },
-  fab: {
-    position: 'absolute',
-    right: 20,
-    bottom: 80,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: Colors.primary,
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: Colors.black,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 8,
-  },
 });
+

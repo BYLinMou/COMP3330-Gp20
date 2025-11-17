@@ -4,6 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../constants/theme';
+import FloatingChatButton from '../../components/floating-chat-button';
 
 const { width } = Dimensions.get('window');
 
@@ -184,6 +185,9 @@ export default function ReportsScreen() {
 
         <View style={{ height: 20 }} />
       </ScrollView>
+
+      {/* Floating Chat Button */}
+      <FloatingChatButton />
     </SafeAreaView>
   );
 }
