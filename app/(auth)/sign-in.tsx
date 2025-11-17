@@ -32,6 +32,104 @@ export default function SignIn() {
     // Success will be handled by AuthProvider
   }
 
+  const scrollContent = (
+    <>
+      {/* Header */}
+      <LinearGradient
+        colors={[Colors.gradientStart, Colors.gradientEnd]}
+        style={styles.header}
+      >
+        <View style={styles.logoContainer}>
+          <Text style={styles.logoEmoji}>🐾</Text>
+        </View>
+        <Text style={styles.appName}>AuraSpend</Text>
+        <Text style={styles.subtitle}>Smart Budgeting Companion</Text>
+      </LinearGradient>
+
+      <View style={styles.content}>
+        <Text style={styles.welcomeText}>Welcome Back!</Text>
+        <Text style={styles.descriptionText}>Sign in to continue managing your finances</Text>
+
+        {/* Email Input */}
+        <View style={styles.inputGroup}>
+          <Text style={styles.inputLabel}>Email</Text>
+          <View style={styles.inputContainer}>
+            <Ionicons name="mail-outline" size={20} color={Colors.textSecondary} />
+            <TextInput
+              style={styles.input}
+              placeholder="Enter your email"
+              autoCapitalize="none"
+              keyboardType="email-address"
+              value={email}
+              onChangeText={setEmail}
+              editable={!loading}
+            />
+          </View>
+        </View>
+
+        {/* Password Input */}
+        <View style={styles.inputGroup}>
+          <Text style={styles.inputLabel}>Password</Text>
+          <View style={styles.inputContainer}>
+            <Ionicons name="lock-closed-outline" size={20} color={Colors.textSecondary} />
+            <TextInput
+              style={styles.input}
+              placeholder="Enter your password"
+              secureTextEntry={!showPassword}
+              value={password}
+              onChangeText={setPassword}
+              editable={!loading}
+            />
+            <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
+              <Ionicons 
+                name={showPassword ? "eye-off-outline" : "eye-outline"} 
+                size={20} 
+                color={Colors.textSecondary} 
+              />
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* Forgot Password Link */}
+        <Link href="/(auth)/forgot-password" asChild>
+          <TouchableOpacity style={styles.forgotPassword} disabled={loading}>
+            <Text style={styles.forgotPasswordText}>Forgot Password?</Text>
+          </TouchableOpacity>
+        </Link>
+
+        {/* Sign In Button */}
+        <TouchableOpacity 
+          style={[styles.signInButton, loading && styles.buttonDisabled]} 
+          onPress={onSignIn}
+          disabled={loading}
+        >
+          {loading ? (
+            <ActivityIndicator color={Colors.white} />
+          ) : (
+            <Text style={styles.signInButtonText}>Sign In</Text>
+          )}
+        </TouchableOpacity>
+
+        {/* Divider */}
+        <View style={styles.divider}>
+          <View style={styles.dividerLine} />
+          <Text style={styles.dividerText}>or</Text>
+          <View style={styles.dividerLine} />
+        </View>
+
+        {/* Sign Up Link */}
+        <View style={styles.signUpContainer}>
+          <Text style={styles.signUpText}>Don't have an account? </Text>
+          <Link href="/(auth)/sign-up" asChild>
+            <TouchableOpacity disabled={loading}>
+              <Text style={styles.signUpLink}>Sign Up</Text>
+            </TouchableOpacity>
+          </Link>
+        </View>
+      </View>
+    </>
+  );
+
   return (
     <SafeAreaView style={styles.container}>
       {Platform.OS === 'web' ? (
@@ -39,99 +137,7 @@ export default function SignIn() {
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
         >
-          {/* Header */}
-          <LinearGradient
-            colors={[Colors.gradientStart, Colors.gradientEnd]}
-            style={styles.header}
-          >
-            <View style={styles.logoContainer}>
-              <Text style={styles.logoEmoji}>🐾</Text>
-            </View>
-            <Text style={styles.appName}>AuraSpend</Text>
-            <Text style={styles.subtitle}>Smart Budgeting Companion</Text>
-          </LinearGradient>
-
-          <View style={styles.content}>
-              <Text style={styles.welcomeText}>Welcome Back!</Text>
-              <Text style={styles.descriptionText}>Sign in to continue managing your finances</Text>
-
-              {/* Email Input */}
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Email</Text>
-                <View style={styles.inputContainer}>
-                  <Ionicons name="mail-outline" size={20} color={Colors.textSecondary} />
-                  <TextInput
-                    style={styles.input}
-                    placeholder="Enter your email"
-                    autoCapitalize="none"
-                    keyboardType="email-address"
-                    value={email}
-                    onChangeText={setEmail}
-                    editable={!loading}
-                  />
-                </View>
-              </View>
-
-              {/* Password Input */}
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Password</Text>
-                <View style={styles.inputContainer}>
-                  <Ionicons name="lock-closed-outline" size={20} color={Colors.textSecondary} />
-                  <TextInput
-                    style={styles.input}
-                    placeholder="Enter your password"
-                    secureTextEntry={!showPassword}
-                    value={password}
-                    onChangeText={setPassword}
-                    editable={!loading}
-                  />
-                  <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
-                    <Ionicons 
-                      name={showPassword ? "eye-off-outline" : "eye-outline"} 
-                      size={20} 
-                      color={Colors.textSecondary} 
-                    />
-                  </TouchableOpacity>
-                </View>
-              </View>
-
-              {/* Forgot Password Link */}
-              <Link href="/(auth)/forgot-password" asChild>
-                <TouchableOpacity style={styles.forgotPassword} disabled={loading}>
-                  <Text style={styles.forgotPasswordText}>Forgot Password?</Text>
-                </TouchableOpacity>
-              </Link>
-
-              {/* Sign In Button */}
-              <TouchableOpacity 
-                style={[styles.signInButton, loading && styles.buttonDisabled]} 
-                onPress={onSignIn}
-                disabled={loading}
-              >
-                {loading ? (
-                  <ActivityIndicator color={Colors.white} />
-                ) : (
-                  <Text style={styles.signInButtonText}>Sign In</Text>
-                )}
-              </TouchableOpacity>
-
-              {/* Divider */}
-              <View style={styles.divider}>
-                <View style={styles.dividerLine} />
-                <Text style={styles.dividerText}>or</Text>
-                <View style={styles.dividerLine} />
-              </View>
-
-              {/* Sign Up Link */}
-              <View style={styles.signUpContainer}>
-                <Text style={styles.signUpText}>Don't have an account? </Text>
-                <Link href="/(auth)/sign-up" asChild>
-                  <TouchableOpacity disabled={loading}>
-                    <Text style={styles.signUpLink}>Sign Up</Text>
-                  </TouchableOpacity>
-                </Link>
-              </View>
-            </View>
+          {scrollContent}
         </ScrollView>
       ) : (
         <KeyboardAvoidingView 
@@ -144,99 +150,7 @@ export default function SignIn() {
               keyboardShouldPersistTaps="handled"
               showsVerticalScrollIndicator={false}
             >
-              {/* Header */}
-              <LinearGradient
-                colors={[Colors.gradientStart, Colors.gradientEnd]}
-                style={styles.header}
-              >
-                <View style={styles.logoContainer}>
-                  <Text style={styles.logoEmoji}>🐾</Text>
-                </View>
-                <Text style={styles.appName}>AuraSpend</Text>
-                <Text style={styles.subtitle}>Smart Budgeting Companion</Text>
-              </LinearGradient>
-
-              <View style={styles.content}>
-                <Text style={styles.welcomeText}>Welcome Back!</Text>
-                <Text style={styles.descriptionText}>Sign in to continue managing your finances</Text>
-
-                {/* Email Input */}
-                <View style={styles.inputGroup}>
-                  <Text style={styles.inputLabel}>Email</Text>
-                  <View style={styles.inputContainer}>
-                    <Ionicons name="mail-outline" size={20} color={Colors.textSecondary} />
-                    <TextInput
-                      style={styles.input}
-                      placeholder="Enter your email"
-                      autoCapitalize="none"
-                      keyboardType="email-address"
-                      value={email}
-                      onChangeText={setEmail}
-                      editable={!loading}
-                    />
-                  </View>
-                </View>
-
-                {/* Password Input */}
-                <View style={styles.inputGroup}>
-                  <Text style={styles.inputLabel}>Password</Text>
-                  <View style={styles.inputContainer}>
-                    <Ionicons name="lock-closed-outline" size={20} color={Colors.textSecondary} />
-                    <TextInput
-                      style={styles.input}
-                      placeholder="Enter your password"
-                      secureTextEntry={!showPassword}
-                      value={password}
-                      onChangeText={setPassword}
-                      editable={!loading}
-                    />
-                    <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
-                      <Ionicons 
-                        name={showPassword ? "eye-off-outline" : "eye-outline"} 
-                        size={20} 
-                        color={Colors.textSecondary} 
-                      />
-                    </TouchableOpacity>
-                  </View>
-                </View>
-
-                {/* Forgot Password Link */}
-                <Link href="/(auth)/forgot-password" asChild>
-                  <TouchableOpacity style={styles.forgotPassword} disabled={loading}>
-                    <Text style={styles.forgotPasswordText}>Forgot Password?</Text>
-                  </TouchableOpacity>
-                </Link>
-
-                {/* Sign In Button */}
-                <TouchableOpacity 
-                  style={[styles.signInButton, loading && styles.buttonDisabled]} 
-                  onPress={onSignIn}
-                  disabled={loading}
-                >
-                  {loading ? (
-                    <ActivityIndicator color={Colors.white} />
-                  ) : (
-                    <Text style={styles.signInButtonText}>Sign In</Text>
-                  )}
-                </TouchableOpacity>
-
-                {/* Divider */}
-                <View style={styles.divider}>
-                  <View style={styles.dividerLine} />
-                  <Text style={styles.dividerText}>or</Text>
-                  <View style={styles.dividerLine} />
-                </View>
-
-                {/* Sign Up Link */}
-                <View style={styles.signUpContainer}>
-                  <Text style={styles.signUpText}>Don't have an account? </Text>
-                  <Link href="/(auth)/sign-up" asChild>
-                    <TouchableOpacity disabled={loading}>
-                      <Text style={styles.signUpLink}>Sign Up</Text>
-                    </TouchableOpacity>
-                  </Link>
-                </View>
-              </View>
+              {scrollContent}
             </ScrollView>
           </TouchableWithoutFeedback>
         </KeyboardAvoidingView>
