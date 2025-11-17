@@ -13,11 +13,17 @@ import { useAuth } from '../../src/providers/AuthProvider';
 
 type InputMethod = 'manual' | 'receipt' | 'voice';
 
+interface ReceiptItem {
+  name: string;
+  amount: number;  // quantity
+  price: number;   // unit price
+}
+
 export default function AddScreen() {
   const { session } = useAuth();
   const [inputMethod, setInputMethod] = useState<InputMethod>('receipt');
   const [amount, setAmount] = useState('');
-  const [description, setDescription] = useState('');
+  const [itemlist, setItemlist] = useState<ReceiptItem[]>([]);
   const [categoryId, setCategoryId] = useState('');
   const [merchant, setMerchant] = useState('');
   const [selectedDate, setSelectedDate] = useState(new Date());
@@ -45,6 +51,14 @@ export default function AddScreen() {
     { label: '$35 Gas', amount: 35 },
     { label: '$45 Groceries', amount: 45 },
   ];
+
+  // Auto-calculate amount from itemlist
+  useEffect(() => {
+    if (itemlist.length > 0) {
+      const total = itemlist.reduce((sum, item) => sum + (item.price * item.amount), 0);
+      setAmount(total.toFixed(2));
+    }
+  }, [itemlist]);
 
   // Load categories on mount and subscribe to realtime changes
   useEffect(() => {
@@ -229,7 +243,28 @@ export default function AddScreen() {
       // 自动填充表单
       setMerchant(receiptData.merchant);
       setAmount(receiptData.amount.toString());
-      setDescription(receiptData.items?.join(', ') || receiptData.description || '');
+      
+      // 如果是字符串数组（旧格式），转换为 ReceiptItem 数组
+      if (receiptData.items && Array.isArray(receiptData.items) && receiptData.items.length > 0) {
+        const firstItem = receiptData.items[0];
+        if (typeof firstItem === 'object' && firstItem !== null && 'name' in firstItem) {
+          // 已经是 ReceiptItem 格式
+          setItemlist(receiptData.items as unknown as ReceiptItem[]);
+        } else if (typeof firstItem === 'string') {
+          // 字符串数组，转换为 ReceiptItem 格式
+          const convertedItems: ReceiptItem[] = (receiptData.items as unknown as string[]).map(name => ({
+            name,
+            amount: 1,
+            price: 0,
+          }));
+          setItemlist(convertedItems);
+        }
+      }
+      
+      // 合并 description 到 notes
+      if (receiptData.description) {
+        setNotes(receiptData.description);
+      }
       
       if (receiptData.date) {
         // Parse the datetime string (YYYY-MM-DDTHH:MM format) into Date object
@@ -294,15 +329,9 @@ export default function AddScreen() {
     }
 
     // Validation
-    if (!amount || isNaN(parseFloat(amount))) {
-      console.warn('[Save Transaction] Blocked: invalid amount value=', amount);
-      Alert.alert('Validation Error', 'Please enter a valid amount');
-      return;
-    }
-
-    if (!description.trim()) {
-      console.warn('[Save Transaction] Blocked: empty description');
-      Alert.alert('Validation Error', 'Please enter a description');
+    if (itemlist.length === 0 && (!amount || isNaN(parseFloat(amount)))) {
+      console.warn('[Save Transaction] Blocked: no items or invalid amount');
+      Alert.alert('Validation Error', 'Please enter an amount or add items');
       return;
     }
 
@@ -320,13 +349,24 @@ export default function AddScreen() {
         source = 'ai';
       }
 
+      // 构建商家名称
+      let merchantName = merchant.trim();
+      if (!merchantName && itemlist.length > 0) {
+        // 如果没有商家，用第一个项目名称作为 fallback
+        merchantName = itemlist[0].name || 'Transaction';
+      }
+      if (!merchantName) {
+        merchantName = 'Transaction';
+      }
+
       const transactionData = {
         amount: numericAmount,
         occurred_at: selectedDate.toISOString(),
-        merchant: merchant.trim() || description.trim(), // Use merchant or description as fallback
+        merchant: merchantName,
         category_id: categoryId || null,
         source,
-        note: description.trim() + (notes.trim() ? ' | ' + notes.trim() : ''), // Combine description and notes
+        note: notes.trim(),
+        items: itemlist.length > 0 ? itemlist : undefined, // 只有在有项目时才保存
       };
 
       console.log('Saving transaction:', transactionData);
@@ -339,7 +379,7 @@ export default function AddScreen() {
           onPress: () => {
             // Reset form
             setAmount('');
-            setDescription('');
+            setItemlist([]);
             setMerchant('');
             setNotes('');
             setSelectedDate(new Date());
@@ -575,55 +615,15 @@ export default function AddScreen() {
                 keyboardType="decimal-pad"
                 value={amount}
                 onChangeText={setAmount}
+                editable={itemlist.length === 0} // Read-only if items present
               />
               <Ionicons name="chevron-down" size={20} color={Colors.textSecondary} />
             </View>
           </View>
 
-          {/* Description */}
-          <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>
-              Description <Text style={styles.required}>*</Text>
-            </Text>
-            <TextInput
-              style={styles.textInput}
-              placeholder="What did you buy?"
-              value={description}
-              onChangeText={setDescription}
-            />
-          </View>
-
-          {/* Category */}
-          <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>Category</Text>
-            <TouchableOpacity 
-              style={styles.selectInput}
-              onPress={() => setShowCategoryModal(true)}
-              disabled={loadingCategories}
-            >
-              <Text style={categoryId ? styles.selectValue : styles.selectPlaceholder}>
-                {categoryId 
-                  ? categories.find(c => c.id === categoryId)?.name || 'No Category'
-                  : 'No Category'}
-              </Text>
-              <Ionicons name="chevron-down" size={20} color={Colors.textSecondary} />
-            </TouchableOpacity>
-          </View>
-
-          {/* Merchant */}
-          <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>Merchant (Optional)</Text>
-            <TextInput
-              style={styles.textInput}
-              placeholder="Enter merchant name (or use description)"
-              value={merchant}
-              onChangeText={setMerchant}
-            />
-          </View>
-
           {/* Date & Time (occurred_at) */}
           <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>Date & Time (Occurred At)</Text>
+            <Text style={styles.inputLabel}>Date & Time <Text style={styles.required}>*</Text></Text>
             {Platform.OS === 'web' ? (
               <input
                 type="datetime-local"
@@ -702,6 +702,101 @@ export default function AddScreen() {
                 )}
               </>
             )}
+          </View>
+
+          {/* Category */}
+          <View style={styles.inputGroup}>
+            <Text style={styles.inputLabel}>Category</Text>
+            <TouchableOpacity 
+              style={styles.selectInput}
+              onPress={() => setShowCategoryModal(true)}
+              disabled={loadingCategories}
+            >
+              <Text style={categoryId ? styles.selectValue : styles.selectPlaceholder}>
+                {categoryId 
+                  ? categories.find(c => c.id === categoryId)?.name || 'No Category'
+                  : 'No Category'}
+              </Text>
+              <Ionicons name="chevron-down" size={20} color={Colors.textSecondary} />
+            </TouchableOpacity>
+          </View>
+
+          {/* Item List */}
+          <View style={styles.inputGroup}>
+            <Text style={styles.inputLabel}>Item List</Text>
+            {itemlist.length > 0 && (
+              <View style={styles.itemListHeader}>
+                <Text style={[styles.itemHeaderText, { flex: 1 }]}>Item</Text>
+                <Text style={[styles.itemHeaderText, { width: 60 }]}>Qty</Text>
+                <Text style={[styles.itemHeaderText, { width: 70 }]}>Price</Text>
+                <Text style={[styles.itemHeaderText, { width: 50 }]}>Total</Text>
+              </View>
+            )}
+            {itemlist.map((item, index) => (
+              <View key={index} style={styles.itemRow}>
+                <TextInput
+                  style={[styles.itemInput, { flex: 1 }]}
+                  placeholder="Item name"
+                  value={item.name}
+                  onChangeText={(text) => {
+                    const newList = [...itemlist];
+                    newList[index].name = text;
+                    setItemlist(newList);
+                  }}
+                />
+                <TextInput
+                  style={styles.itemInputSmall}
+                  placeholder="Qty"
+                  keyboardType="decimal-pad"
+                  value={item.amount.toString()}
+                  onChangeText={(text) => {
+                    const newList = [...itemlist];
+                    newList[index].amount = parseFloat(text) || 1;
+                    setItemlist(newList);
+                  }}
+                />
+                <TextInput
+                  style={styles.itemInputSmall}
+                  placeholder="Price"
+                  keyboardType="decimal-pad"
+                  value={item.price.toFixed(2)}
+                  onChangeText={(text) => {
+                    const newList = [...itemlist];
+                    newList[index].price = parseFloat(text) || 0;
+                    setItemlist(newList);
+                  }}
+                />
+                <View style={[styles.itemInputSmall, styles.itemTotal]}>
+                  <Text style={styles.itemTotalText}>
+                    ${(item.amount * item.price).toFixed(2)}
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  style={styles.itemDeleteButton}
+                  onPress={() => setItemlist(itemlist.filter((_, i) => i !== index))}
+                >
+                  <Ionicons name="trash-outline" size={18} color={Colors.error} />
+                </TouchableOpacity>
+              </View>
+            ))}
+            <TouchableOpacity
+              style={styles.addItemButton}
+              onPress={() => setItemlist([...itemlist, { name: '', amount: 1, price: 0 }])}
+            >
+              <Ionicons name="add-circle-outline" size={20} color={Colors.primary} />
+              <Text style={styles.addItemText}>Add Item</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Merchant */}
+          <View style={styles.inputGroup}>
+            <Text style={styles.inputLabel}>Merchant (Optional)</Text>
+            <TextInput
+              style={styles.textInput}
+              placeholder="Enter merchant name"
+              value={merchant}
+              onChangeText={setMerchant}
+            />
           </View>
 
           {/* Notes */}
@@ -1235,6 +1330,70 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: Colors.textSecondary,
     fontFamily: 'monospace',
+  },
+  itemListHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+    paddingBottom: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.gray200,
+  },
+  itemHeaderText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: Colors.textSecondary,
+  },
+  itemRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+    gap: 8,
+  },
+  itemInput: {
+    backgroundColor: Colors.gray100,
+    borderRadius: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    fontSize: 14,
+    color: Colors.textPrimary,
+  },
+  itemInputSmall: {
+    backgroundColor: Colors.gray100,
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 8,
+    fontSize: 14,
+    color: Colors.textPrimary,
+    textAlign: 'center',
+  },
+  itemTotal: {
+    backgroundColor: Colors.gray50,
+    justifyContent: 'center',
+  },
+  itemTotalText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: Colors.primary,
+  },
+  itemDeleteButton: {
+    paddingHorizontal: 8,
+    paddingVertical: 8,
+  },
+  addItemButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    gap: 8,
+    borderTopWidth: 1,
+    borderTopColor: Colors.gray200,
+    marginTop: 8,
+    paddingTop: 12,
+  },
+  addItemText: {
+    fontSize: 14,
+    color: Colors.primary,
+    fontWeight: '600',
   },
   confirmModalContent: {
     backgroundColor: Colors.white,

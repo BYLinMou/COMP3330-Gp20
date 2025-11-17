@@ -15,11 +15,17 @@ import { getCategories } from './categories';
 /**
  * 收据数据结构
  */
+export interface ReceiptItem {
+  name: string;    // Item name
+  amount: number;  // Quantity
+  price: number;   // Unit price
+}
+
 export interface ReceiptData {
   merchant: string;        // 商家名称
   amount: number;          // 金额（总额）
   date?: string;           // 交易日期时间 (ISO 格式 YYYY-MM-DDTHH:MM)
-  items?: string[];        // 购买项目列表
+  items?: ReceiptItem[];   // 购买项目列表 - 详细项目信息
   description?: string;    // 描述
   category?: string;       // 分类建议
   isNewCategory?: boolean; // 是否是新分类建议（不在现有分类列表中）
@@ -220,36 +226,44 @@ async function analyzeReceiptWithMultimodalLLM(
       ? existingCategories.join(', ') 
       : 'No existing categories';
     
-    const systemPrompt = `You are a receipt analysis expert. Analyze the receipt image and extract key information.
+    const systemPrompt = `You are a professional receipt analysis expert. Your ONLY job is to analyze receipt images and return structured JSON data.
 
-IMPORTANT: Return ONLY a valid JSON object with this exact structure:
+**CRITICAL REQUIREMENTS:**
+1. Return ONLY valid JSON - NO explanations, NO markdown, NO extra text
+2. Every single field must be present in your response
+3. The JSON must be valid and parseable
+
+**EXACT REQUIRED STRUCTURE:**
 {
-  "merchant": "store or restaurant name",
-  "amount": 0.00,
-  "date": "YYYY-MM-DDTHH:MM",
-  "items": ["item1", "item2"],
-  "description": "brief description",
+  "merchant": "store name",
+  "amount": 12.34,
+  "date": "2024-11-17T14:33",
+  "items": [
+    {"name": "item1", "amount": 1, "price": 5.00},
+    {"name": "item2", "amount": 2, "price": 3.50}
+  ],
+  "description": "short summary",
   "category": "category name",
   "isNewCategory": false
 }
 
-Rules:
-- merchant: Extract the store/restaurant name from the receipt
-- amount: Extract the TOTAL amount as a number (not a string)
-- date: Convert to YYYY-MM-DDTHH:MM format in LOCAL TIME (e.g., "2024-11-17T14:33" for 2:33 PM on Nov 17, 2024)
-  * Extract time from receipt timestamp if available (use 24-hour format: 14:33 for 2:33 PM)
-  * If time is not found, use 12:00 (noon)
-  * If date is not found, use current date and time
-  * IMPORTANT: Use the EXACT time shown on the receipt (e.g., if receipt shows 14:33, use "YYYY-MM-DDT14:33")
-- items: List of purchased items. If unclear, use empty array []
-- description: Brief summary of what was purchased
-- category: Choose from existing categories or suggest a new one
-  * Existing categories: ${categoryList}
-  * If a good match exists, use it exactly as shown
-  * If no good match exists, suggest a NEW category name that fits the purchase
-- isNewCategory: Set to true if you suggested a new category, false if using an existing one
+**FIELD RULES:**
+- merchant (required, string): The store/restaurant name. Extract from receipt header or footer.
+- amount (required, number): Total bill amount as a decimal (e.g., 12.34). NOT a string.
+- date (required, string): ISO format YYYY-MM-DDTHH:MM. Use 24-hour time. If missing, use 12:00.
+- items (required, array): Individual line items as objects with EXACT structure: 
+  {name: "item name", amount: quantity (number), price: unit price (number)}
+  If receipt shows "2 x $3.50", then amount=2, price=3.50
+  If item quantity unclear, use amount=1
+  Return empty array [] if no items visible
+- description (required, string): Brief (1-2 sentence) summary of purchase
+- category (required, string): Choose from list below, or suggest new one
+  Available: ${categoryList}
+- isNewCategory (required, boolean): true if you suggested new category, false otherwise
 
-Do NOT include any explanation or markdown. Return ONLY the JSON object.`;
+**RESPONSE FORMAT:**
+Output NOTHING but the JSON object. No markdown formatting, no backticks, no explanation.
+If you cannot extract information, use sensible defaults or empty values.`;
 
     const requestBody = {
       model: primaryModel,
@@ -263,7 +277,7 @@ Do NOT include any explanation or markdown. Return ONLY the JSON object.`;
           content: [
             {
               type: 'text',
-              text: 'Please analyze this receipt image and extract the information as JSON.',
+              text: 'Analyze this receipt and return ONLY the JSON object with no other text:',
             },
             {
               type: 'image_url',
@@ -274,8 +288,9 @@ Do NOT include any explanation or markdown. Return ONLY the JSON object.`;
           ],
         },
       ],
-      temperature: 0.3, // 低温度以获得更稳定的输出
-      max_tokens: 1000,
+      temperature: 0.2, // 极低温度确保一致输出
+      max_tokens: 800,
+      top_p: 0.9,
     };
 
     console.log('[Receipt Processor] Sending request to LLM...');
@@ -296,16 +311,25 @@ Do NOT include any explanation or markdown. Return ONLY the JSON object.`;
     }
 
     const data = await response.json();
-    console.log('[Receipt Processor] LLM Response:', data);
-
+    console.log('[Receipt Processor] API Response received');
+    console.log('[Receipt Processor] Status:', data.model);
+    
     // 提取响应内容
     const content = data.choices?.[0]?.message?.content;
     if (!content) {
       throw new Error('No content in API response');
     }
 
+    console.log('[Receipt Processor] ===== LLM Raw Response =====');
+    console.log(content);
+    console.log('[Receipt Processor] ===== End Raw Response =====');
+
     // 解析 JSON（处理可能的 markdown 包装）
     const parsedData = parseJSONFromResponse(content);
+    
+    console.log('[Receipt Processor] ===== Parsed Data =====');
+    console.log(JSON.stringify(parsedData, null, 2));
+    console.log('[Receipt Processor] ===== End Parsed Data =====');
     
     // 验证和清洗数据
     const cleanedData = sanitizeReceiptData(parsedData, existingCategories);
@@ -325,22 +349,76 @@ Do NOT include any explanation or markdown. Return ONLY the JSON object.`;
  * ============================================================
  */
 function parseJSONFromResponse(content: string): any {
+  console.log('[Receipt Processor] Parsing response content...');
+  console.log('[Receipt Processor] Content length:', content.length);
+  console.log('[Receipt Processor] Content preview:', content.substring(0, 200));
+  
   try {
     // 尝试直接解析
-    return JSON.parse(content);
-  } catch {
-    // 如果失败，尝试从 markdown 代码块中提取
-    const jsonMatch = content.match(/```json\s*([\s\S]*?)\s*```/) || 
-                      content.match(/```\s*([\s\S]*?)\s*```/) ||
-                      content.match(/\{[\s\S]*\}/);
-    
-    if (jsonMatch) {
-      const jsonStr = jsonMatch[1] || jsonMatch[0];
-      return JSON.parse(jsonStr);
-    }
-    
-    throw new Error('Could not extract JSON from response');
+    const directParse = JSON.parse(content);
+    console.log('[Receipt Processor] ✅ Successfully parsed JSON directly');
+    return directParse;
+  } catch (e) {
+    console.log('[Receipt Processor] Direct parse failed, trying alternative methods...');
   }
+  
+  // 方法 1: 尝试从 markdown 代码块中提取
+  const markdownPatterns = [
+    /```json\s*([\s\S]*?)\s*```/,
+    /```\s*([\s\S]*?)\s*```/,
+  ];
+  
+  for (const pattern of markdownPatterns) {
+    const match = content.match(pattern);
+    if (match) {
+      try {
+        const jsonStr = match[1];
+        console.log('[Receipt Processor] Found JSON in markdown block');
+        const parsed = JSON.parse(jsonStr);
+        console.log('[Receipt Processor] ✅ Successfully parsed JSON from markdown');
+        return parsed;
+      } catch (e) {
+        console.log('[Receipt Processor] Failed to parse markdown JSON block:', (e as Error).message);
+      }
+    }
+  }
+  
+  // 方法 2: 尝试找到第一个 { 和最后一个 }
+  const firstBrace = content.indexOf('{');
+  const lastBrace = content.lastIndexOf('}');
+  
+  if (firstBrace !== -1 && lastBrace !== -1 && firstBrace < lastBrace) {
+    try {
+      const jsonStr = content.substring(firstBrace, lastBrace + 1);
+      console.log('[Receipt Processor] Extracted potential JSON substring');
+      const parsed = JSON.parse(jsonStr);
+      console.log('[Receipt Processor] ✅ Successfully parsed extracted JSON');
+      return parsed;
+    } catch (e) {
+      console.log('[Receipt Processor] Failed to parse extracted JSON:', (e as Error).message);
+    }
+  }
+  
+  // 方法 3: 清理常见的 LLM 响应问题
+  try {
+    // 移除注释和控制字符
+    let cleaned = content
+      .replace(/\/\/.*$/gm, '') // 移除 // 注释
+      .replace(/\/\*[\s\S]*?\*\//g, '') // 移除 /* */ 注释
+      .trim();
+    
+    // 尝试解析清理后的内容
+    const parsed = JSON.parse(cleaned);
+    console.log('[Receipt Processor] ✅ Successfully parsed cleaned JSON');
+    return parsed;
+  } catch (e) {
+    console.log('[Receipt Processor] Failed to parse cleaned JSON:', (e as Error).message);
+  }
+  
+  // 所有方法都失败了
+  console.error('[Receipt Processor] ❌ Could not extract valid JSON from response');
+  console.error('[Receipt Processor] Full response content:', content);
+  throw new Error(`Could not extract JSON from response. Response was: ${content.substring(0, 100)}...`);
 }
 
 /**
@@ -353,13 +431,35 @@ function sanitizeReceiptData(data: any, existingCategories: string[]): ReceiptDa
   const category = String(data.category || 'Other').trim();
   const isNewCategory = data.isNewCategory === true || !existingCategories.includes(category);
   
+  // 处理 items - 新格式是对象数组
+  let items: ReceiptItem[] = [];
+  if (Array.isArray(data.items)) {
+    items = data.items
+      .map((item: any) => {
+        // 支持对象格式或字符串格式
+        if (typeof item === 'object' && item !== null && item.name) {
+          return {
+            name: String(item.name || '').trim(),
+            amount: Math.max(0, Number(item.amount) || 1),
+            price: Math.max(0, Number(item.price) || 0),
+          };
+        } else if (typeof item === 'string') {
+          return {
+            name: String(item).trim(),
+            amount: 1,
+            price: 0,
+          };
+        }
+        return null;
+      })
+      .filter((item: any) => item !== null && item.name);
+  }
+  
   return {
     merchant: String(data.merchant || 'Unknown Merchant').trim(),
     amount: Math.max(0, Number(data.amount) || 0),
     date: data.date ? formatDateTimeISO(data.date) : formatDateTimeISO(new Date().toISOString()),
-    items: Array.isArray(data.items) 
-      ? data.items.filter((item: any) => item && String(item).trim()) 
-      : [],
+    items: items,
     description: String(data.description || '').trim(),
     category: category,
     isNewCategory: isNewCategory,
