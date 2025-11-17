@@ -3,6 +3,14 @@ import { getOpenAIConfig } from './openai-config';
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant';
   content: string;
+  tool_calls?: {
+    id: string;
+    type: 'function';
+    function: {
+      name: string;
+      arguments: string;
+    };
+  }[];
 }
 
 export interface ChatCompletionRequest {
@@ -10,6 +18,14 @@ export interface ChatCompletionRequest {
   temperature?: number;
   max_tokens?: number;
   stream?: boolean;
+  tools?: {
+    type: 'function';
+    function: {
+      name: string;
+      description: string;
+      parameters: any;
+    };
+  }[];
 }
 
 export interface ChatCompletionResponse {
