@@ -10,6 +10,7 @@ import { Colors } from '../../constants/theme';
 import { addTransaction } from '../../src/services/transactions';
 import { getCategories, addCategory, subscribeToCategoryChanges, type Category } from '../../src/services/categories';
 import { getCurrencies, type Currency } from '../../src/services/currencies';
+import { getPaymentMethods, type PaymentMethod } from '../../src/services/payment-methods';
 import { processReceiptImage, type ReceiptData, type ProcessingProgress } from '../../src/services/receipt-processor';
 import { useAuth } from '../../src/providers/AuthProvider';
 import { TextInput as GestureTextInput } from 'react-native-gesture-handler';
@@ -32,10 +33,12 @@ export default function AddScreen() {
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [notes, setNotes] = useState('');
   const [selectedCurrency, setSelectedCurrency] = useState('');
+  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState('');
   const [userOverrodeAmount, setUserOverrodeAmount] = useState(false);
   
   // Categories and loading states
   const [categories, setCategories] = useState<Category[]>([]);
+  const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
   const [currencyOptions, setCurrencyOptions] = useState<Currency[]>([]);
   const [loadingCategories, setLoadingCategories] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -44,6 +47,7 @@ export default function AddScreen() {
   // Modal states
   const [showCategoryModal, setShowCategoryModal] = useState(false);
   const [showCurrencyModal, setShowCurrencyModal] = useState(false);
+  const [showPaymentMethodModal, setShowPaymentMethodModal] = useState(false);
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showTimePicker, setShowTimePicker] = useState(false);
   const [showNewCategoryModal, setShowNewCategoryModal] = useState(false);
@@ -75,6 +79,7 @@ export default function AddScreen() {
   useEffect(() => {
     loadCategories();
     loadCurrencies();
+    loadPaymentMethods();
   }, []);
 
   // Subscribe to category changes for realtime updates
@@ -134,6 +139,16 @@ export default function AddScreen() {
       console.log('[Add] Loaded currencies:', data);
     } catch (error) {
       console.error('Failed to load currencies:', error);
+    }
+  };
+
+  const loadPaymentMethods = async () => {
+    try {
+      const data = await getPaymentMethods();
+      setPaymentMethods(data);
+      console.log('[Add] Loaded payment methods:', data);
+    } catch (error) {
+      console.error('Failed to load payment methods:', error);
     }
   };
 
@@ -272,6 +287,12 @@ export default function AddScreen() {
         console.log('[Add Screen] Currency detected:', receiptData.currency);
       }
       
+      // 设置支付方式（如果 AI 检测到）
+      if (receiptData.payment_method) {
+        setSelectedPaymentMethod(receiptData.payment_method);
+        console.log('[Add Screen] Payment method detected:', receiptData.payment_method);
+      }
+      
       // 如果是字符串数组（旧格式），转换为 ReceiptItem 数组
       if (receiptData.items && Array.isArray(receiptData.items) && receiptData.items.length > 0) {
         const firstItem = receiptData.items[0];
@@ -392,6 +413,7 @@ export default function AddScreen() {
         category_id: categoryId || null,
         source,
         note: notes.trim(),
+        payment_method: selectedPaymentMethod || null,
         items: itemlist.length > 0 ? itemlist : undefined, // 只有在有项目时才保存
       };
 
@@ -409,6 +431,7 @@ export default function AddScreen() {
             setMerchant('');
             setNotes('');
             setSelectedDate(new Date());
+            setSelectedPaymentMethod('');
             setUserOverrodeAmount(false);
           },
         },
@@ -567,12 +590,6 @@ export default function AddScreen() {
                 <Text style={styles.uploadButtonText}>Take Photo</Text>
               </TouchableOpacity>
             </View>
-            {processingReceipt && (
-              <View style={styles.processingIndicator}>
-                <ActivityIndicator color={Colors.primary} size="small" />
-                <Text style={styles.processingText}>Processing receipt...</Text>
-              </View>
-            )}
           </View>
         )}
 
@@ -861,6 +878,28 @@ export default function AddScreen() {
             </TouchableOpacity>
           </View>
 
+          {/* Payment Method */}
+          <View style={styles.inputGroup}>
+            <Text style={styles.inputLabel}>Payment Method (Optional)</Text>
+            <TouchableOpacity 
+              style={styles.selectInput}
+              onPress={() => setShowPaymentMethodModal(true)}
+            >
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                {selectedPaymentMethod && (() => {
+                  const selectedMethod = paymentMethods.find(m => m.name === selectedPaymentMethod);
+                  return selectedMethod?.icon ? (
+                    <Ionicons name={selectedMethod.icon as any} size={18} color={Colors.textSecondary} />
+                  ) : null;
+                })()}
+                <Text style={selectedPaymentMethod ? styles.selectValue : styles.selectPlaceholder}>
+                  {selectedPaymentMethod || 'Select payment method'}
+                </Text>
+              </View>
+              <Ionicons name="chevron-down" size={20} color={Colors.textSecondary} />
+            </TouchableOpacity>
+          </View>
+
           {/* Merchant */}
           <View style={styles.inputGroup}>
             <Text style={styles.inputLabel}>Merchant (Optional)</Text>
@@ -1031,6 +1070,78 @@ export default function AddScreen() {
         </View>
       </Modal>
 
+      {/* Payment Method Selection Modal */}
+      <Modal
+        visible={showPaymentMethodModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowPaymentMethodModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Select Payment Method</Text>
+              <TouchableOpacity onPress={() => setShowPaymentMethodModal(false)}>
+                <Ionicons name="close" size={24} color={Colors.textPrimary} />
+              </TouchableOpacity>
+            </View>
+            
+            <ScrollView style={styles.modalList}>
+              {/* No Payment Method Option */}
+              <TouchableOpacity
+                style={[
+                  styles.modalItem,
+                  !selectedPaymentMethod && styles.modalItemSelected
+                ]}
+                onPress={() => {
+                  setSelectedPaymentMethod('');
+                  setShowPaymentMethodModal(false);
+                }}
+              >
+                <Text style={[
+                  styles.modalItemText,
+                  !selectedPaymentMethod && styles.modalItemTextSelected
+                ]}>
+                  Not specified
+                </Text>
+                {!selectedPaymentMethod && (
+                  <Ionicons name="checkmark" size={20} color={Colors.primary} />
+                )}
+              </TouchableOpacity>
+
+              {paymentMethods.map((method) => (
+                <TouchableOpacity
+                  key={method.id}
+                  style={[
+                    styles.modalItem,
+                    selectedPaymentMethod === method.name && styles.modalItemSelected
+                  ]}
+                  onPress={() => {
+                    setSelectedPaymentMethod(method.name);
+                    setShowPaymentMethodModal(false);
+                  }}
+                >
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                    {method.icon && (
+                      <Ionicons name={method.icon as any} size={20} color={Colors.textSecondary} />
+                    )}
+                    <Text style={[
+                      styles.modalItemText,
+                      selectedPaymentMethod === method.name && styles.modalItemTextSelected
+                    ]}>
+                      {method.name}
+                    </Text>
+                  </View>
+                  {selectedPaymentMethod === method.name && (
+                    <Ionicons name="checkmark" size={20} color={Colors.primary} />
+                  )}
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
       {/* New Category Confirmation Modal */}
       <Modal
         visible={showNewCategoryModal}
@@ -1066,6 +1177,20 @@ export default function AddScreen() {
                 <Text style={styles.confirmModalButtonTextPrimary}>Yes, Create</Text>
               </TouchableOpacity>
             </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Processing Receipt Modal */}
+      <Modal
+        visible={processingReceipt}
+        transparent
+        animationType="fade"
+      >
+        <View style={styles.processingOverlay}>
+          <View style={styles.processingModalContent}>
+            <ActivityIndicator size="large" color={Colors.primary} />
+            <Text style={styles.processingModalText}>Processing receipt...</Text>
           </View>
         </View>
       </Modal>
@@ -1176,21 +1301,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     color: Colors.textPrimary,
-  },
-  processingIndicator: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginTop: 16,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    backgroundColor: Colors.gray100,
-    borderRadius: 8,
-  },
-  processingText: {
-    fontSize: 14,
-    color: Colors.textSecondary,
-    fontWeight: '500',
   },
   card: {
     backgroundColor: Colors.white,
@@ -1594,5 +1704,23 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
     marginTop: 2,
     marginLeft: 4,
+  },
+  processingOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  processingModalContent: {
+    backgroundColor: Colors.white,
+    borderRadius: 16,
+    padding: 24,
+    alignItems: 'center',
+    gap: 12,
+  },
+  processingModalText: {
+    fontSize: 16,
+    color: Colors.textPrimary,
+    fontWeight: '500',
   },
 });

@@ -12,6 +12,8 @@ import { Platform } from 'react-native';
 import { getOpenAIConfig } from './openai-config';
 import { getCategories } from './categories';
 import { getCurrencies } from './currencies';
+import { getPaymentMethods } from './payment-methods';
+import type { Currency } from './currencies';
 
 /**
  * 收据数据结构
@@ -31,6 +33,7 @@ export interface ReceiptData {
   category?: string;       // 分类建议
   isNewCategory?: boolean; // 是否是新分类建议（不在现有分类列表中）
   currency?: string;       // 货币代码 (USD, HKD, CNY, etc.)
+  payment_method?: string | null; // 支付方式 (Cash, VISA, Apple Pay, etc.)
 }
 
 /**
@@ -205,7 +208,8 @@ async function performOCR(imageBase64: string): Promise<OCRResult> {
 async function analyzeReceiptWithMultimodalLLM(
   imageBase64: string,
   existingCategories: string[],
-  availableCurrencies: string[]
+  availableCurrencies: string[],
+  availablePaymentMethods: string[]
 ): Promise<ReceiptData> {
   try {
     // 从 settings 读取用户配置
@@ -233,6 +237,10 @@ async function analyzeReceiptWithMultimodalLLM(
       ? availableCurrencies.join(', ')
       : 'USD, HKD, CNY';
     
+    const paymentMethodList = availablePaymentMethods.length > 0
+      ? availablePaymentMethods.join(', ')
+      : 'Cash, Credit Card, Debit Card, VISA, Mastercard, American Express, Apple Pay, Google Pay, PayPal, WeChat Pay, Alipay, Bank Transfer, Other';
+    
     const systemPrompt = `You are a professional receipt analysis expert. Your task is to extract structured data from receipt images with maximum accuracy.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -259,7 +267,8 @@ async function analyzeReceiptWithMultimodalLLM(
   ],
   "description": "Brief purchase summary",
   "category": "category name",
-  "isNewCategory": false
+  "isNewCategory": false,
+  "payment_method": "VISA"
 }
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -279,8 +288,13 @@ async function analyzeReceiptWithMultimodalLLM(
   If receipt shows "2 x $3.50", then amount=2, price=3.50
   If item quantity unclear, use amount=1
   Return empty array [] if no items visible
+- payment_method (optional, string): Payment method used for this transaction.
+  Look for payment information in the receipt footer/payment section.
+  Choose from the available list below. If unclear or not visible on receipt, return null.
+  Available: ${paymentMethodList}
 - merchant (required, string): The store/restaurant name. Extract from receipt header or footer.
 - description (required, string): Brief (1-2 sentence) summary of purchase
+
 
 **RESPONSE FORMAT:**
 Output NOTHING but the JSON object. No markdown formatting, no backticks, no explanation.
@@ -484,6 +498,9 @@ function sanitizeReceiptData(data: any, existingCategories: string[]): ReceiptDa
       .filter((item: any) => item !== null && item.name);
   }
   
+  // Handle payment_method - allow null if not provided
+  const paymentMethod = data.payment_method ? String(data.payment_method).trim() : null;
+  
   return {
     merchant: String(data.merchant || 'Unknown Merchant').trim(),
     amount: Math.max(0, Number(data.amount) || 0),
@@ -493,6 +510,7 @@ function sanitizeReceiptData(data: any, existingCategories: string[]): ReceiptDa
     category: category,
     isNewCategory: isNewCategory,
     currency: currency,
+    payment_method: paymentMethod,
   };
 }
 
@@ -590,9 +608,10 @@ export async function processReceiptImage(
     });
     // const ocrResult = await performOCR(base64Image); // 暂时跳过
 
-    // 步骤 3: 获取现有分类列表和货币列表
+    // 步骤 3: 获取现有分类列表、货币列表和支付方式列表
     let existingCategories: string[] = [];
     let availableCurrencies: string[] = [];
+    let availablePaymentMethods: string[] = [];
     try {
       const categories = await getCategories();
       existingCategories = categories.map(c => c.name);
@@ -603,11 +622,20 @@ export async function processReceiptImage(
     
     try {
       const currencies = await getCurrencies();
-      availableCurrencies = currencies.map(c => c.code);
+      availableCurrencies = currencies.map((c: Currency) => c.code);
       console.log('[Receipt Processor] Loaded available currencies:', availableCurrencies);
     } catch (error) {
       console.warn('[Receipt Processor] Failed to load currencies, using defaults:', error);
       availableCurrencies = ['USD', 'HKD', 'CNY'];
+    }
+    
+    try {
+      const paymentMethods = await getPaymentMethods();
+      availablePaymentMethods = paymentMethods.map(m => m.name);
+      console.log('[Receipt Processor] Loaded available payment methods:', availablePaymentMethods);
+    } catch (error) {
+      console.warn('[Receipt Processor] Failed to load payment methods, using defaults:', error);
+      availablePaymentMethods = ['Cash', 'Credit Card', 'Debit Card', 'VISA', 'Mastercard', 'American Express', 'Apple Pay', 'Google Pay', 'PayPal', 'WeChat Pay', 'Alipay', 'Bank Transfer', 'Other'];
     }
 
     // 步骤 4: 使用多模态 LLM 直接分析
@@ -616,7 +644,7 @@ export async function processReceiptImage(
       message: 'Analyzing receipt with AI...',
       progress: 50,
     });
-    const receiptData = await analyzeReceiptWithMultimodalLLM(base64Image, existingCategories, availableCurrencies);
+    const receiptData = await analyzeReceiptWithMultimodalLLM(base64Image, existingCategories, availableCurrencies, availablePaymentMethods);
 
     // 步骤 5: 完成
     onProgress?.({

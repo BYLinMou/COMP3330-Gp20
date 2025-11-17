@@ -10,6 +10,7 @@ export interface Transaction {
   category_id: string | null;
   source: 'manual' | 'ocr' | 'ai';
   note: string | null;
+  payment_method: string | null;
   created_at: string;
   updated_at: string;
   // Joined data (optional)
