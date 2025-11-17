@@ -14,6 +14,13 @@ import {
   type OpenAIConfig,
   type OpenAIModel 
 } from '../../src/services/openai-config';
+import {
+  getCategories,
+  addCategory,
+  deleteCategory,
+  subscribeToCategoryChanges,
+  type Category,
+} from '../../src/services/categories';
 
 export default function SettingsScreen() {
   const { session } = useAuth();
@@ -44,12 +51,36 @@ export default function SettingsScreen() {
   const [showPrimaryModelModal, setShowPrimaryModelModal] = useState(false);
   const [showFallbackModelModal, setShowFallbackModelModal] = useState(false);
 
-  const categories = ['Food & Dining', 'Transportation', 'Shopping', 'Entertainment', 'Bills & Utilities', 'Healthcare'];
+  // Categories state
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [loadingCategories, setLoadingCategories] = useState(true);
+  const [newCategoryName, setNewCategoryName] = useState('');
 
   // Load OpenAI config on mount
   useEffect(() => {
     loadOpenAIConfig();
   }, []);
+
+  // Load categories and subscribe to realtime
+  useEffect(() => {
+    if (!session) return;
+    (async () => {
+      await loadCategories();
+    })();
+    let unsub: undefined | (() => Promise<void>);
+    (async () => {
+      try {
+        unsub = await subscribeToCategoryChanges(() => {
+          loadCategories();
+        });
+      } catch (e) {
+        console.warn('Category realtime not active:', e);
+      }
+    })();
+    return () => {
+      if (unsub) unsub().catch(() => {});
+    };
+  }, [session]);
 
   useEffect(() => {
     // Load user's actual login email from session
@@ -96,6 +127,48 @@ export default function SettingsScreen() {
     } finally {
       setLoadingModels(false);
     }
+  };
+
+  const loadCategories = async () => {
+    try {
+      setLoadingCategories(true);
+      const data = await getCategories();
+      setCategories(data);
+    } catch (e) {
+      console.error('Failed to load categories:', e);
+    } finally {
+      setLoadingCategories(false);
+    }
+  };
+
+  const handleAddCategory = async () => {
+    const name = newCategoryName.trim();
+    if (!name) {
+      Alert.alert('Validation Error', 'Please enter a category name');
+      return;
+    }
+    try {
+      await addCategory(name);
+      setNewCategoryName('');
+      // realtime will refresh; fallback refresh now
+      await loadCategories();
+    } catch (e: any) {
+      Alert.alert('Error', e?.message || 'Failed to add category');
+    }
+  };
+
+  const handleDeleteCategory = async (id: string, name: string) => {
+    Alert.alert('Delete Category', `Delete "${name}"? Transactions will keep history but category will be removed.`, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Delete', style: 'destructive', onPress: async () => {
+        try {
+          await deleteCategory(id);
+          await loadCategories();
+        } catch (e: any) {
+          Alert.alert('Error', e?.message || 'Failed to delete category');
+        }
+      }},
+    ]);
   };
 
   const handleSaveOpenAIConfig = async () => {
@@ -425,22 +498,30 @@ export default function SettingsScreen() {
             <TextInput
               style={styles.addCategoryInput}
               placeholder="Add new category..."
+              value={newCategoryName}
+              onChangeText={setNewCategoryName}
             />
-            <TouchableOpacity style={styles.addButton}>
+            <TouchableOpacity style={styles.addButton} onPress={handleAddCategory} disabled={!session}>
               <Text style={styles.addButtonText}>Add</Text>
             </TouchableOpacity>
           </View>
 
-          <View style={styles.categoryTags}>
-            {categories.map((category, index) => (
-              <View key={index} style={styles.categoryTag}>
-                <Text style={styles.categoryTagText}>{category}</Text>
-                <TouchableOpacity>
-                  <Ionicons name="close" size={16} color={Colors.textPrimary} />
-                </TouchableOpacity>
-              </View>
-            ))}
-          </View>
+          {loadingCategories ? (
+            <ActivityIndicator />
+          ) : categories.length === 0 ? (
+            <Text style={styles.helperText}>No categories yet. Add your first one!</Text>
+          ) : (
+            <View style={styles.categoryTags}>
+              {categories.map((category) => (
+                <View key={category.id} style={styles.categoryTag}>
+                  <Text style={styles.categoryTagText}>{category.name}</Text>
+                  <TouchableOpacity onPress={() => handleDeleteCategory(category.id, category.name)}>
+                    <Ionicons name="close" size={16} color={Colors.textPrimary} />
+                  </TouchableOpacity>
+                </View>
+              ))}
+            </View>
+          )}
         </View>
 
         {/* Data & Privacy */}

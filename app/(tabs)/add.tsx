@@ -6,7 +6,8 @@ import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import * as ImagePicker from 'expo-image-picker';
 import { Colors } from '../../constants/theme';
-import { addTransaction, getCategories, type Category } from '../../src/services/transactions';
+import { addTransaction } from '../../src/services/transactions';
+import { getCategories, type Category } from '../../src/services/categories';
 import { processReceiptImage, type ReceiptData, type ProcessingProgress } from '../../src/services/receipt-processor';
 import { useAuth } from '../../src/providers/AuthProvider';
 
@@ -174,17 +175,20 @@ export default function AddScreen() {
   const handleSaveTransaction = async () => {
     // Check authentication first
     if (!session) {
+      console.warn('[Save Transaction] Blocked: no active session');
       Alert.alert('Authentication Required', 'Please sign in to save transactions');
       return;
     }
 
     // Validation
     if (!amount || isNaN(parseFloat(amount))) {
+      console.warn('[Save Transaction] Blocked: invalid amount value=', amount);
       Alert.alert('Validation Error', 'Please enter a valid amount');
       return;
     }
 
     if (!description.trim()) {
+      console.warn('[Save Transaction] Blocked: empty description');
       Alert.alert('Validation Error', 'Please enter a description');
       return;
     }
@@ -234,6 +238,7 @@ export default function AddScreen() {
       const errorMessage = error?.message || 'Failed to save transaction. Please try again.';
       Alert.alert('Error', errorMessage);
     } finally {
+      console.log('[Save Transaction] Submit flow finished');
       setSubmitting(false);
     }
   };

@@ -1,11 +1,5 @@
 import { supabase } from './supabase';
-
-export interface Category {
-  id: string;
-  user_id: string;
-  name: string;
-  created_at: string;
-}
+import type { Category } from './categories';
 
 export interface Transaction {
   id: string;
@@ -30,6 +24,62 @@ export interface Budget {
   start_date: string;
   created_at: string;
   updated_at: string;
+}
+
+export type TransactionRealtimeEvent = 'INSERT' | 'UPDATE' | 'DELETE';
+export type TransactionChange = {
+  eventType: TransactionRealtimeEvent;
+  new?: Transaction | null;
+  old?: Transaction | null;
+};
+
+/**
+ * Subscribe to realtime changes on the current user's transactions.
+ * Returns an unsubscribe function. Requires Supabase Realtime enabled for table.
+ */
+export async function subscribeToTransactionChanges(
+  onChange: (change: TransactionChange) => void,
+  options?: { userId?: string }
+) {
+  const { userId } = options || {};
+  const user = userId
+    ? { id: userId }
+    : (await supabase.auth.getUser()).data.user;
+
+  if (!user) {
+    throw new Error('User not authenticated');
+  }
+
+  const channel = supabase
+    .channel(`public:transactions:${user.id}`)
+    .on(
+      'postgres_changes',
+      {
+        event: '*',
+        schema: 'public',
+        table: 'transactions',
+        filter: `user_id=eq.${user.id}`,
+      },
+      (payload: any) => {
+        onChange({
+          eventType: payload.eventType as TransactionRealtimeEvent,
+          new: (payload.new ?? null) as Transaction | null,
+          old: (payload.old ?? null) as Transaction | null,
+        });
+      }
+    )
+    .subscribe();
+
+  // Return cleanup function
+  return async () => {
+    try {
+      await channel.unsubscribe();
+    } catch (e) {
+      // Fallback
+      // @ts-ignore
+      supabase.removeChannel?.(channel);
+    }
+  };
 }
 
 /**
@@ -287,65 +337,6 @@ export async function deleteTransaction(id: string) {
 /**
  * Get all categories for the current user
  */
-export async function getCategories() {
-  try {
-    const { data: { user } } = await supabase.auth.getUser();
-    
-    if (!user) {
-      throw new Error('User not authenticated');
-    }
-
-    const { data, error } = await supabase
-      .from('categories')
-      .select('*')
-      .eq('user_id', user.id)
-      .order('name');
-
-    if (error) {
-      console.error('Error fetching categories:', error);
-      throw error;
-    }
-
-    return data as Category[];
-  } catch (error) {
-    console.error('Failed to fetch categories:', error);
-    throw error;
-  }
-}
-
-/**
- * Add a new category
- */
-export async function addCategory(name: string) {
-  try {
-    const { data: { user } } = await supabase.auth.getUser();
-    
-    if (!user) {
-      throw new Error('User not authenticated');
-    }
-
-    const { data, error } = await supabase
-      .from('categories')
-      .insert([
-        {
-          name,
-          user_id: user.id,
-        }
-      ])
-      .select()
-      .single();
-
-    if (error) {
-      console.error('Error adding category:', error);
-      throw error;
-    }
-
-    return data as Category;
-  } catch (error) {
-    console.error('Failed to add category:', error);
-    throw error;
-  }
-}
 
 /**
  * Get current budget

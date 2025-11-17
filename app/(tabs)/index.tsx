@@ -8,6 +8,7 @@ import {
   getRecentTransactions, 
   getIncomeAndExpenses, 
   getSpendingBreakdown,
+  subscribeToTransactionChanges,
   type Transaction 
 } from '../../src/services/transactions';
 import { useAuth } from '../../src/providers/AuthProvider';
@@ -61,6 +62,27 @@ export default function HomeScreen() {
     if (session) {
       loadData();
     }
+  }, [session]);
+
+  // Realtime: refresh when transactions change
+  useEffect(() => {
+    if (!session) return;
+    let unsub: undefined | (() => Promise<void>);
+    (async () => {
+      try {
+        unsub = await subscribeToTransactionChanges(() => {
+          // Re-fetch summary + recent list on any change
+          loadData();
+        });
+      } catch (e) {
+        console.warn('Realtime subscription not active:', e);
+      }
+    })();
+    return () => {
+      if (unsub) {
+        unsub().catch(() => {});
+      }
+    };
   }, [session]);
 
   async function loadData() {
