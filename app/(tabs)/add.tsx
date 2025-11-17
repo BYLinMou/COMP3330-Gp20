@@ -7,7 +7,7 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import * as ImagePicker from 'expo-image-picker';
 import { Colors } from '../../constants/theme';
 import { addTransaction } from '../../src/services/transactions';
-import { getCategories, subscribeToCategoryChanges, type Category } from '../../src/services/categories';
+import { getCategories, addCategory, subscribeToCategoryChanges, type Category } from '../../src/services/categories';
 import { processReceiptImage, type ReceiptData, type ProcessingProgress } from '../../src/services/receipt-processor';
 import { useAuth } from '../../src/providers/AuthProvider';
 
@@ -32,6 +32,9 @@ export default function AddScreen() {
   // Modal states
   const [showCategoryModal, setShowCategoryModal] = useState(false);
   const [showDatePicker, setShowDatePicker] = useState(false);
+  const [showNewCategoryModal, setShowNewCategoryModal] = useState(false);
+  const [suggestedCategory, setSuggestedCategory] = useState<string>('');
+  const [pendingReceiptData, setPendingReceiptData] = useState<ReceiptData | null>(null);
   
 
 
@@ -158,18 +161,15 @@ export default function AddScreen() {
   const handleReceiptImageProcessing = async (imageUri: string) => {
     try {
       setProcessingReceipt(true);
-      
-      // 显示处理进度
-      let progressMessage = 'Starting receipt processing...';
-      Alert.alert('Processing Receipt', progressMessage);
 
       // 调用独立的收据处理器（来自 receipt-processor.ts）
       const receiptData = await processReceiptImage(imageUri, (progress: ProcessingProgress) => {
-        progressMessage = `${progress.message} (${progress.progress}%)`;
-        console.log('[Add Screen]', progressMessage);
+        console.log('[Add Screen]', `${progress.message} (${progress.progress}%)`);
       });
 
       console.log('[Add Screen] Receipt data received:', receiptData);
+      console.log('[Add Screen] isNewCategory:', receiptData.isNewCategory);
+      console.log('[Add Screen] category:', receiptData.category);
 
       // 自动填充表单
       setMerchant(receiptData.merchant);
@@ -180,21 +180,43 @@ export default function AddScreen() {
         setSelectedDate(new Date(receiptData.date));
       }
 
-      // 尝试匹配分类
-      if (receiptData.category && categories.length > 0) {
-        const matchedCategory = categories.find(
-          cat => cat.name.toLowerCase().includes(receiptData.category!.toLowerCase())
-        );
-        if (matchedCategory) {
-          setCategoryId(matchedCategory.id);
+      // 处理分类建议
+      if (receiptData.category) {
+        if (receiptData.isNewCategory) {
+          // AI 建议了新分类，显示确认对话框（Web 兼容）
+          console.log('[Add Screen] Showing new category confirmation modal');
+          setSuggestedCategory(receiptData.category);
+          setPendingReceiptData(receiptData);
+          setShowNewCategoryModal(true);
+        } else {
+          // 使用现有分类
+          const matchedCategory = categories.find(
+            cat => cat.name.toLowerCase() === receiptData.category!.toLowerCase()
+          );
+          if (matchedCategory) {
+            setCategoryId(matchedCategory.id);
+          }
+          if (Platform.OS === 'web') {
+            alert('✅ Receipt information extracted! Please review the details and save.');
+          } else {
+            Alert.alert(
+              '✅ Success', 
+              'Receipt information extracted! Please review the details and save.',
+              [{ text: 'OK' }]
+            );
+          }
+        }
+      } else {
+        if (Platform.OS === 'web') {
+          alert('✅ Receipt information extracted! Please select a category and save.');
+        } else {
+          Alert.alert(
+            '✅ Success', 
+            'Receipt information extracted! Please select a category and save.',
+            [{ text: 'OK' }]
+          );
         }
       }
-
-      Alert.alert(
-        '✅ Success', 
-        'Receipt information extracted! Please review the details and save.',
-        [{ text: 'OK' }]
-      );
     } catch (error: any) {
       console.error('[Add Screen] Receipt processing error:', error);
       Alert.alert(
@@ -275,6 +297,54 @@ export default function AddScreen() {
     } finally {
       console.log('[Save Transaction] Submit flow finished');
       setSubmitting(false);
+    }
+  };
+
+  const handleCreateNewCategory = async () => {
+    try {
+      console.log('[Add Screen] Creating new category:', suggestedCategory);
+      const newCategory = await addCategory(suggestedCategory);
+      setCategoryId(newCategory.id);
+      await loadCategories(); // 重新加载分类列表
+      setShowNewCategoryModal(false);
+      
+      if (Platform.OS === 'web') {
+        alert(`✅ Category "${suggestedCategory}" created and selected!\n\nReceipt information extracted! Please review the details and save.`);
+      } else {
+        Alert.alert(
+          '✅ Success', 
+          `Category "${suggestedCategory}" created and selected!\n\nReceipt information extracted! Please review the details and save.`,
+          [{ text: 'OK' }]
+        );
+      }
+    } catch (error: any) {
+      console.error('Failed to create category:', error);
+      setShowNewCategoryModal(false);
+      
+      if (Platform.OS === 'web') {
+        alert(`⚠️ Category Creation Failed\n\n${error?.message || 'Failed to create the suggested category. Please create it manually in Settings.'}`);
+      } else {
+        Alert.alert(
+          '⚠️ Category Creation Failed',
+          error?.message || 'Failed to create the suggested category. Please create it manually in Settings.',
+          [{ text: 'OK' }]
+        );
+      }
+    }
+  };
+
+  const handleSkipNewCategory = () => {
+    console.log('[Add Screen] User skipped creating new category');
+    setShowNewCategoryModal(false);
+    
+    if (Platform.OS === 'web') {
+      alert('✅ Receipt information extracted! Please select a category and save.');
+    } else {
+      Alert.alert(
+        '✅ Success', 
+        'Receipt information extracted! Please select a category and save.',
+        [{ text: 'OK' }]
+      );
     }
   };
 
@@ -672,6 +742,45 @@ export default function AddScreen() {
         </View>
       </Modal>
 
+      {/* New Category Confirmation Modal */}
+      <Modal
+        visible={showNewCategoryModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowNewCategoryModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.confirmModalContent}>
+            <View style={styles.confirmModalIcon}>
+              <Ionicons name="sparkles" size={48} color={Colors.primary} />
+            </View>
+            
+            <Text style={styles.confirmModalTitle}>🤖 AI Suggestion</Text>
+            
+            <Text style={styles.confirmModalMessage}>
+              AI suggests creating a new category:{'\n'}
+              <Text style={styles.confirmModalCategory}>"{suggestedCategory}"</Text>
+              {'\n\n'}Would you like to create this category?
+            </Text>
+            
+            <View style={styles.confirmModalButtons}>
+              <TouchableOpacity 
+                style={[styles.confirmModalButton, styles.confirmModalButtonSecondary]}
+                onPress={handleSkipNewCategory}
+              >
+                <Text style={styles.confirmModalButtonTextSecondary}>No, Skip</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity 
+                style={[styles.confirmModalButton, styles.confirmModalButtonPrimary]}
+                onPress={handleCreateNewCategory}
+              >
+                <Text style={styles.confirmModalButtonTextPrimary}>Yes, Create</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
     </SafeAreaView>
   );
@@ -1036,5 +1145,66 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: Colors.textSecondary,
     fontFamily: 'monospace',
+  },
+  confirmModalContent: {
+    backgroundColor: Colors.white,
+    borderRadius: 20,
+    padding: 30,
+    marginHorizontal: 20,
+    alignItems: 'center',
+    maxWidth: 400,
+    alignSelf: 'center',
+  },
+  confirmModalIcon: {
+    marginBottom: 20,
+  },
+  confirmModalTitle: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: Colors.textPrimary,
+    marginBottom: 16,
+    textAlign: 'center',
+  },
+  confirmModalMessage: {
+    fontSize: 16,
+    color: Colors.textSecondary,
+    textAlign: 'center',
+    lineHeight: 24,
+    marginBottom: 24,
+  },
+  confirmModalCategory: {
+    fontWeight: '700',
+    color: Colors.primary,
+    fontSize: 18,
+  },
+  confirmModalButtons: {
+    flexDirection: 'row',
+    gap: 12,
+    width: '100%',
+  },
+  confirmModalButton: {
+    flex: 1,
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  confirmModalButtonPrimary: {
+    backgroundColor: Colors.primary,
+  },
+  confirmModalButtonSecondary: {
+    backgroundColor: Colors.gray100,
+    borderWidth: 1,
+    borderColor: Colors.gray300,
+  },
+  confirmModalButtonTextPrimary: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: Colors.white,
+  },
+  confirmModalButtonTextSecondary: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: Colors.textPrimary,
   },
 });

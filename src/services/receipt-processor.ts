@@ -10,6 +10,7 @@
 
 import { Platform } from 'react-native';
 import { getOpenAIConfig } from './openai-config';
+import { getCategories } from './categories';
 
 /**
  * 收据数据结构
@@ -21,6 +22,7 @@ export interface ReceiptData {
   items?: string[];        // 购买项目列表
   description?: string;    // 描述
   category?: string;       // 分类建议
+  isNewCategory?: boolean; // 是否是新分类建议（不在现有分类列表中）
 }
 
 /**
@@ -192,7 +194,10 @@ async function performOCR(imageBase64: string): Promise<OCRResult> {
  * 步骤 3: 使用多模态 LLM 直接分析收据图片
  * ============================================================
  */
-async function analyzeReceiptWithMultimodalLLM(imageBase64: string): Promise<ReceiptData> {
+async function analyzeReceiptWithMultimodalLLM(
+  imageBase64: string,
+  existingCategories: string[]
+): Promise<ReceiptData> {
   try {
     // 从 settings 读取用户配置
     const config = await getOpenAIConfig();
@@ -211,6 +216,10 @@ async function analyzeReceiptWithMultimodalLLM(imageBase64: string): Promise<Rec
     const endpoint = `${baseUrl}/chat/completions`;
 
     // 构建 prompt - 要求 LLM 直接从图片中提取信息
+    const categoryList = existingCategories.length > 0 
+      ? existingCategories.join(', ') 
+      : 'No existing categories';
+    
     const systemPrompt = `You are a receipt analysis expert. Analyze the receipt image and extract key information.
 
 IMPORTANT: Return ONLY a valid JSON object with this exact structure:
@@ -220,7 +229,8 @@ IMPORTANT: Return ONLY a valid JSON object with this exact structure:
   "date": "YYYY-MM-DD",
   "items": ["item1", "item2"],
   "description": "brief description",
-  "category": "category name"
+  "category": "category name",
+  "isNewCategory": false
 }
 
 Rules:
@@ -229,7 +239,11 @@ Rules:
 - date: Convert to YYYY-MM-DD format. If not found, use today's date
 - items: List of purchased items. If unclear, use empty array []
 - description: Brief summary of what was purchased
-- category: Suggest ONE category from: Food, Shopping, Transport, Entertainment, Health, Utilities, Other
+- category: Choose from existing categories or suggest a new one
+  * Existing categories: ${categoryList}
+  * If a good match exists, use it exactly as shown
+  * If no good match exists, suggest a NEW category name that fits the purchase
+- isNewCategory: Set to true if you suggested a new category, false if using an existing one
 
 Do NOT include any explanation or markdown. Return ONLY the JSON object.`;
 
@@ -290,7 +304,7 @@ Do NOT include any explanation or markdown. Return ONLY the JSON object.`;
     const parsedData = parseJSONFromResponse(content);
     
     // 验证和清洗数据
-    const cleanedData = sanitizeReceiptData(parsedData);
+    const cleanedData = sanitizeReceiptData(parsedData, existingCategories);
     
     console.log('[Receipt Processor] Final receipt data:', cleanedData);
     return cleanedData;
@@ -330,8 +344,11 @@ function parseJSONFromResponse(content: string): any {
  * 辅助函数：清洗和验证收据数据
  * ============================================================
  */
-function sanitizeReceiptData(data: any): ReceiptData {
+function sanitizeReceiptData(data: any, existingCategories: string[]): ReceiptData {
   // 确保所有必需字段存在且格式正确
+  const category = String(data.category || 'Other').trim();
+  const isNewCategory = data.isNewCategory === true || !existingCategories.includes(category);
+  
   return {
     merchant: String(data.merchant || 'Unknown Merchant').trim(),
     amount: Math.max(0, Number(data.amount) || 0),
@@ -340,7 +357,8 @@ function sanitizeReceiptData(data: any): ReceiptData {
       ? data.items.filter((item: any) => item && String(item).trim()) 
       : [],
     description: String(data.description || '').trim(),
-    category: String(data.category || 'Other').trim(),
+    category: category,
+    isNewCategory: isNewCategory,
   };
 }
 
@@ -412,15 +430,25 @@ export async function processReceiptImage(
     });
     // const ocrResult = await performOCR(base64Image); // 暂时跳过
 
-    // 步骤 3: 使用多模态 LLM 直接分析
+    // 步骤 3: 获取现有分类列表
+    let existingCategories: string[] = [];
+    try {
+      const categories = await getCategories();
+      existingCategories = categories.map(c => c.name);
+      console.log('[Receipt Processor] Loaded existing categories:', existingCategories);
+    } catch (error) {
+      console.warn('[Receipt Processor] Failed to load categories, proceeding without them:', error);
+    }
+
+    // 步骤 4: 使用多模态 LLM 直接分析
     onProgress?.({
       step: 'analyzing',
       message: 'Analyzing receipt with AI...',
       progress: 50,
     });
-    const receiptData = await analyzeReceiptWithMultimodalLLM(base64Image);
+    const receiptData = await analyzeReceiptWithMultimodalLLM(base64Image, existingCategories);
 
-    // 步骤 4: 完成
+    // 步骤 5: 完成
     onProgress?.({
       step: 'complete',
       message: 'Processing complete!',
