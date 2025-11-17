@@ -58,6 +58,43 @@ export const Colors = {
   tabIconSelected: '#8B5CF6',
 };
 
+/**
+ * Gradient definitions for common use cases
+ * Use with LinearGradient component: <LinearGradient colors={Gradients.primary.colors} start={Gradients.primary.start} end={Gradients.primary.end} />
+ */
+export const Gradients = {
+  primary: {
+    colors: ['rgba(124, 58, 237, 0.8)', 'rgba(59, 130, 246, 0.8)'] as const,
+    start: { x: 0, y: 0 },
+    end: { x: 1, y: 1 },
+  },
+  primaryReverse: {
+    colors: [Colors.gradientEnd, Colors.gradientStart] as const,
+    start: { x: 0, y: 0 },
+    end: { x: 1, y: 1 },
+  },
+  primaryVertical: {
+    colors: [Colors.gradientStart, Colors.gradientEnd] as const,
+    start: { x: 0, y: 0 },
+    end: { x: 0, y: 1 },
+  },
+  userMessage: {
+    colors: ['rgba(59, 130, 246, 0.8)', 'rgba(139, 92, 246, 0.8)'] as const,
+    start: { x: 0, y: 0 },
+    end: { x: 1, y: 1 },
+  },
+  success: {
+    colors: ['#10B981', '#059669'] as const,
+    start: { x: 0, y: 0 },
+    end: { x: 1, y: 1 },
+  },
+  error: {
+    colors: ['#EF4444', '#DC2626'] as const,
+    start: { x: 0, y: 0 },
+    end: { x: 1, y: 1 },
+  },
+};
+
 export const Fonts = Platform.select({
   ios: {
     /** iOS `UIFontDescriptorSystemDesignDefault` */

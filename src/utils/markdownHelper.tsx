@@ -12,6 +12,7 @@ import { Text, View } from 'react-native';
  * - # Header -> Larger text with bold
  * - ## Header -> Medium text with bold
  * - ### Header -> Small text with bold
+ * - > Blockquote -> Indented text with left border
  * - Line breaks -> Separate Text components
  */
 export function renderMarkdownAsReactNative(markdown: string, textColor?: string): React.ReactNode {
@@ -25,8 +26,18 @@ export function renderMarkdownAsReactNative(markdown: string, textColor?: string
   return (
     <>
       {lines.map((line, lineIndex) => {
+        // Handle blockquotes
+        if (line.startsWith('> ')) {
+          return (
+            <View key={lineIndex} style={{ borderLeftWidth: 4, borderLeftColor: '#ccc', paddingLeft: 8, marginBottom: 4 }}>
+              <Text style={{ color: defaultColor }}>
+                {parseInlineMarkdown(line.substring(2), defaultColor)}
+              </Text>
+            </View>
+          );
+        }
         // Handle headers
-        if (line.startsWith('### ')) {
+        else if (line.startsWith('### ')) {
           return (
             <Text key={lineIndex} style={{ fontSize: 14, fontWeight: 'bold', marginBottom: 4, color: defaultColor }}>
               {parseInlineMarkdown(line.substring(4), defaultColor)}
@@ -113,6 +124,9 @@ export function convertMarkdownToFormattedText(markdown: string): string {
   if (!markdown) return '';
 
   let text = markdown;
+
+  // Blockquote: > text -> [BLOCKQUOTE]text[/BLOCKQUOTE]
+  text = text.replace(/^> (.*)$/gm, '[BLOCKQUOTE]$1[/BLOCKQUOTE]');
 
   // Bold: **text** -> [BOLD]text[/BOLD]
   text = text.replace(/\*\*(.*?)\*\*/g, '[BOLD]$1[/BOLD]');

@@ -1,9 +1,11 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { TouchableOpacity, StyleSheet, View, Modal, TextInput, FlatList, Text, Alert } from 'react-native';
+import { TouchableOpacity, StyleSheet, View, Modal, TextInput, FlatList, Text, Alert, KeyboardAvoidingView, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Colors } from '../constants/theme';
+import { Gradients } from '../constants/theme';
 import { sendChatCompletion, ChatMessage } from '../src/services/openai-client';
 import { allTools, SYSTEM_PROMPT, Tool, parseMultipleToolCalls, isValidToolName } from '../src/services/chat-tools';
 import { renderMarkdownAsReactNative } from '../src/utils/markdownHelper';
@@ -59,6 +61,10 @@ export default function FloatingChatButton({ onPress }: FloatingChatButtonProps)
         if (storedMessages) {
           const parsedMessages = JSON.parse(storedMessages);
           setMessages(parsedMessages);
+          // Scroll to bottom after loading messages
+          setTimeout(() => {
+            flatListRef.current?.scrollToEnd({ animated: false });
+          }, 100);
         }
       } catch (error) {
         console.error('Error loading chat messages:', error);
@@ -108,6 +114,10 @@ export default function FloatingChatButton({ onPress }: FloatingChatButtonProps)
     } else {
       // Default action: show chat modal
       setModalVisible(true);
+      // Scroll to bottom when modal opens
+      setTimeout(() => {
+        flatListRef.current?.scrollToEnd({ animated: false });
+      }, 100);
     }
   };
 
@@ -494,9 +504,9 @@ export default function FloatingChatButton({ onPress }: FloatingChatButtonProps)
   return (
     <>
       <LinearGradient
-        colors={[Colors.gradientStart, Colors.gradientEnd]}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
+        colors={Gradients.primary.colors}
+        start={Gradients.primary.start}
+        end={Gradients.primary.end}
         style={styles.fabGradient}
       >
         <TouchableOpacity style={styles.fab} onPress={handlePress}>
@@ -510,14 +520,19 @@ export default function FloatingChatButton({ onPress }: FloatingChatButtonProps)
         visible={modalVisible}
         onRequestClose={handleBackPress}
       >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Aura Assistant</Text>
-              <TouchableOpacity onPress={closeModal}>
-                <Ionicons name="close" size={24} color={Colors.textPrimary} />
-              </TouchableOpacity>
-            </View>
+        <KeyboardAvoidingView 
+          style={{ flex: 1 }} 
+          behavior="padding"
+          keyboardVerticalOffset={0}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalContent}>
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>Aura Assistant</Text>
+                <TouchableOpacity onPress={closeModal}>
+                  <Ionicons name="close" size={24} color={Colors.textPrimary} />
+                </TouchableOpacity>
+              </View>
             
             <FlatList
               data={messages}
@@ -612,15 +627,22 @@ export default function FloatingChatButton({ onPress }: FloatingChatButtonProps)
                       )}
                     </View>
                   ) : (
-                    <View style={[styles.messageContainer, item.isUser ? styles.userMessage : styles.aiMessage]}>
+                    <>
                       {item.isUser ? (
-                        <Text style={[styles.messageText, styles.userMessageText]}>{item.text}</Text>
+                        <LinearGradient
+                          colors={Gradients.userMessage.colors}
+                          start={Gradients.userMessage.start}
+                          end={Gradients.userMessage.end}
+                          style={[styles.messageContainer, styles.userMessage]}
+                        >
+                          <Text style={[styles.messageText, styles.userMessageText]}>{item.text}</Text>
+                        </LinearGradient>
                       ) : (
-                        <View>
+                        <View style={[styles.messageContainer, styles.aiMessage]}>
                           {renderMarkdownAsReactNative(item.text, Colors.textPrimary)}
                         </View>
                       )}
-                    </View>
+                    </>
                   )}
                 </View>
               )}
@@ -650,12 +672,33 @@ export default function FloatingChatButton({ onPress }: FloatingChatButtonProps)
                 onBlur={() => setIsInputFocused(false)}
                 editable={!isLoading}
               />
-              <TouchableOpacity style={[styles.sendButton, (isLoading || !inputText.trim()) && styles.sendButtonDisabled]} onPress={sendMessage} disabled={isLoading || !inputText.trim()}>
-                <Ionicons name="send" size={20} color={Colors.white} />
+              <TouchableOpacity 
+                style={[
+                  styles.sendButtonWrapper,
+                  (isLoading || !inputText.trim()) && styles.sendButtonWrapperDisabled
+                ]} 
+                onPress={sendMessage} 
+                disabled={isLoading || !inputText.trim()}
+              >
+                {(isLoading || !inputText.trim()) ? (
+                  <View style={[styles.sendButton, styles.sendButtonDisabled]}>
+                    <Ionicons name="send" size={20} color={Colors.white} />
+                  </View>
+                ) : (
+                  <LinearGradient
+                    colors={Gradients.primary.colors}
+                    start={Gradients.primary.start}
+                    end={Gradients.primary.end}
+                    style={styles.sendButton}
+                  >
+                    <Ionicons name="send" size={20} color={Colors.white} />
+                  </LinearGradient>
+                )}
               </TouchableOpacity>
             </View>
+            </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     </>
   );
@@ -684,7 +727,7 @@ const styles = StyleSheet.create({
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.35)',
+    backgroundColor: 'rgba(0, 0, 0, 0.4)',
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -693,7 +736,7 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     width: '95%',
     height: '80%',
-    padding: 20,
+    padding: 15,
     shadowColor: Colors.black,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
@@ -722,12 +765,14 @@ const styles = StyleSheet.create({
   },
   userMessage: {
     alignSelf: 'flex-end',
-    backgroundColor: Colors.primary,
+    backgroundColor: undefined, // Will be overridden by gradient in LinearGradient
+    borderRadius: 10,
+    maxWidth: '85%',
   },
   aiMessage: {
     alignSelf: 'flex-start',
-    backgroundColor: Colors.gray250,
-    width: '80%',
+    backgroundColor: 'rgba(220, 225, 232, 0.65)',
+    maxWidth: '85%',
   },
   messageText: {
     fontSize: 16,
@@ -746,11 +791,11 @@ const styles = StyleSheet.create({
     paddingTop: 10,
   },
   clearButton: {
-    width: 44,
-    height: 44,
+    width: 46,
+    height: 46,
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 10,
+    marginRight: 0,
   },
   textInput: {
     flex: 1,
@@ -762,8 +807,16 @@ const styles = StyleSheet.create({
     marginRight: 10,
     color: Colors.textPrimary,
   },
+  sendButtonWrapper: {
+    borderRadius: 22,
+    width: 44,
+    height: 44,
+    overflow: 'hidden',
+  },
+  sendButtonWrapperDisabled: {
+    opacity: 0.5,
+  },
   sendButton: {
-    backgroundColor: Colors.primary,
     borderRadius: 22,
     width: 44,
     height: 44,
@@ -779,7 +832,7 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     width: '80%',
     alignSelf: 'flex-start',
-    backgroundColor: Colors.gray250,
+    backgroundColor: 'rgba(220, 225, 232, 0.65)',
   },
   toolCallHeader: {
     flexDirection: 'row',
