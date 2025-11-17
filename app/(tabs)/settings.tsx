@@ -24,6 +24,9 @@ import {
 
 export default function SettingsScreen() {
   const { session } = useAuth();
+  
+  console.log('SettingsScreen mounted, session:', !!session);
+  
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [currency, setCurrency] = useState('USD ($)');
@@ -132,7 +135,9 @@ export default function SettingsScreen() {
   const loadCategories = async () => {
     try {
       setLoadingCategories(true);
+      console.log('Loading categories...');
       const data = await getCategories();
+      console.log('Categories loaded:', data.length, 'items');
       setCategories(data);
     } catch (e) {
       console.error('Failed to load categories:', e);
@@ -158,17 +163,28 @@ export default function SettingsScreen() {
   };
 
   const handleDeleteCategory = async (id: string, name: string) => {
-    Alert.alert('Delete Category', `Delete "${name}"? Transactions will keep history but category will be removed.`, [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Delete', style: 'destructive', onPress: async () => {
-        try {
-          await deleteCategory(id);
+    console.log('Delete button clicked for category:', name, 'id:', id);
+    console.log('Session status:', !!session);
+    
+    if (!session) {
+      console.log('No session, showing error');
+      Alert.alert('Error', 'You must be logged in to delete categories');
+      return;
+    }
+    
+    console.log('Showing confirmation dialog');
+
+    try {
+          console.log('Calling deleteCategory with id:', id);
+          const result = await deleteCategory(id);
+          console.log('deleteCategory returned:', result);
+          console.log('Reloading categories...');
           await loadCategories();
+          console.log('Categories reloaded successfully');
         } catch (e: any) {
+          console.error('Error during delete:', e);
           Alert.alert('Error', e?.message || 'Failed to delete category');
         }
-      }},
-    ]);
   };
 
   const handleSaveOpenAIConfig = async () => {
@@ -515,8 +531,21 @@ export default function SettingsScreen() {
               {categories.map((category) => (
                 <View key={category.id} style={styles.categoryTag}>
                   <Text style={styles.categoryTagText}>{category.name}</Text>
-                  <TouchableOpacity onPress={() => handleDeleteCategory(category.id, category.name)}>
-                    <Ionicons name="close" size={16} color={Colors.textPrimary} />
+                  <TouchableOpacity 
+                    onPress={() => {
+                      console.log('TouchableOpacity pressed for:', category.name);
+                      handleDeleteCategory(category.id, category.name);
+                    }}
+                    disabled={!session}
+                    style={styles.deleteButton}
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                    activeOpacity={0.6}
+                  >
+                    <Ionicons 
+                      name="close-circle" 
+                      size={20} 
+                      color={!session ? Colors.textSecondary : '#FF3B30'} 
+                    />
                   </TouchableOpacity>
                 </View>
               ))}
@@ -958,6 +987,10 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '500',
     color: Colors.textPrimary,
+  },
+  deleteButton: {
+    padding: 4,
+    marginLeft: 4,
   },
   menuItem: {
     flexDirection: 'row',

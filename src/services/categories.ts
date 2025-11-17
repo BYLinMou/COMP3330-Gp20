@@ -93,26 +93,39 @@ export async function deleteCategory(id: string) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error('User not authenticated');
 
-  const { error: txErr } = await supabase
+  console.log('Deleting category:', id, 'for user:', user.id);
+
+  // First, clear category references in transactions
+  const { data: txData, error: txErr, count: txCount } = await supabase
     .from('transactions')
     .update({ category_id: null })
     .eq('category_id', id)
     .eq('user_id', user.id);
+  
+  console.log('Transaction update result:', { txData, txErr, txCount });
+  
   if (txErr) {
     console.error('Error clearing category references in transactions:', txErr);
-    throw txErr;
+    throw new Error(`Failed to clear category references: ${txErr.message || JSON.stringify(txErr)}`);
   }
 
-  const { error } = await supabase
+  console.log('Successfully cleared category references, now deleting category');
+
+  // Then delete the category
+  const { data, error, count } = await supabase
     .from('categories')
     .delete()
     .eq('id', id)
     .eq('user_id', user.id);
 
+  console.log('Delete operation result:', { data, error, count });
+
   if (error) {
     console.error('Error deleting category:', error);
-    throw error;
+    throw new Error(`Failed to delete category: ${error.message || JSON.stringify(error)}`);
   }
+  
+  console.log('Category deleted successfully');
   return true;
 }
 
