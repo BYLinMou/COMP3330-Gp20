@@ -96,7 +96,7 @@ export default function SignUp() {
             <Text style={styles.logoEmoji}>🐾</Text>
           </View>
           <Text style={styles.appName}>Create Account</Text>
-          <Text style={styles.subtitle}>Join AuraPet today</Text>
+          <Text style={styles.subtitle}>Join AuraSpend today</Text>
         </LinearGradient>
 
         <TouchableWithoutFeedback onPress={Keyboard.dismiss}>

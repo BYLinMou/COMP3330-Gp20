@@ -241,7 +241,7 @@ export default function SettingsScreen() {
         colors={[Colors.gradientStart, Colors.gradientEnd]}
         style={styles.header}
       >
-        <Text style={styles.appName}>AuraPet</Text>
+        <Text style={styles.appName}>AuraSpend</Text>
         <Text style={styles.subtitle}>Smart Budgeting Companion</Text>
       </LinearGradient>
 

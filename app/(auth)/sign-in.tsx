@@ -47,7 +47,7 @@ export default function SignIn() {
             <View style={styles.logoContainer}>
               <Text style={styles.logoEmoji}>🐾</Text>
             </View>
-            <Text style={styles.appName}>AuraPet</Text>
+            <Text style={styles.appName}>AuraSpend</Text>
             <Text style={styles.subtitle}>Smart Budgeting Companion</Text>
           </LinearGradient>
 
@@ -152,7 +152,7 @@ export default function SignIn() {
                 <View style={styles.logoContainer}>
                   <Text style={styles.logoEmoji}>🐾</Text>
                 </View>
-                <Text style={styles.appName}>AuraPet</Text>
+                <Text style={styles.appName}>AuraSpend</Text>
                 <Text style={styles.subtitle}>Smart Budgeting Companion</Text>
               </LinearGradient>
 
