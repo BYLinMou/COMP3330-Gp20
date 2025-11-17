@@ -8,6 +8,7 @@ import {
   getRecentTransactions, 
   getIncomeAndExpenses, 
   getSpendingBreakdown,
+  subscribeToTransactionChanges,
   type Transaction 
 } from '../../src/services/transactions';
 import { useAuth } from '../../src/providers/AuthProvider';
@@ -63,6 +64,27 @@ export default function HomeScreen() {
     }
   }, [session]);
 
+  // Realtime: refresh when transactions change
+  useEffect(() => {
+    if (!session) return;
+    let unsub: undefined | (() => Promise<void>);
+    (async () => {
+      try {
+        unsub = await subscribeToTransactionChanges(() => {
+          // Re-fetch summary + recent list on any change
+          loadData();
+        });
+      } catch (e) {
+        console.warn('Realtime subscription not active:', e);
+      }
+    })();
+    return () => {
+      if (unsub) {
+        unsub().catch(() => {});
+      }
+    };
+  }, [session]);
+
   async function loadData() {
     try {
       setLoading(true);
@@ -111,7 +133,7 @@ export default function HomeScreen() {
         colors={[Colors.gradientStart, Colors.gradientEnd]}
         style={styles.header}
       >
-        <Text style={styles.appName}>AuraPet</Text>
+        <Text style={styles.appName}>AuraSpend</Text>
         <Text style={styles.subtitle}>Smart Budgeting Companion</Text>
       </LinearGradient>
 

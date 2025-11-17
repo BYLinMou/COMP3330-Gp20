@@ -14,9 +14,19 @@ import {
   type OpenAIConfig,
   type OpenAIModel 
 } from '../../src/services/openai-config';
+import {
+  getCategories,
+  addCategory,
+  deleteCategory,
+  subscribeToCategoryChanges,
+  type Category,
+} from '../../src/services/categories';
 
 export default function SettingsScreen() {
   const { session } = useAuth();
+  
+  console.log('SettingsScreen mounted, session:', !!session);
+  
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [currency, setCurrency] = useState('USD ($)');
@@ -44,12 +54,48 @@ export default function SettingsScreen() {
   const [showPrimaryModelModal, setShowPrimaryModelModal] = useState(false);
   const [showFallbackModelModal, setShowFallbackModelModal] = useState(false);
 
-  const categories = ['Food & Dining', 'Transportation', 'Shopping', 'Entertainment', 'Bills & Utilities', 'Healthcare'];
+  // Categories state
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [loadingCategories, setLoadingCategories] = useState(true);
+  const [newCategoryName, setNewCategoryName] = useState('');
 
   // Load OpenAI config on mount
   useEffect(() => {
     loadOpenAIConfig();
   }, []);
+
+  // Load categories and subscribe to realtime
+  useEffect(() => {
+    if (!session) return;
+    (async () => {
+      await loadCategories();
+    })();
+    let unsub: undefined | (() => Promise<void>);
+    (async () => {
+      try {
+        console.log('[Settings] Subscribing to category changes...');
+        unsub = await subscribeToCategoryChanges((change) => {
+          console.log('[Settings] Category change received:', {
+            eventType: change.eventType,
+            newCategory: change.new?.name,
+            oldCategory: change.old?.name,
+          });
+          // Reload categories for any event (INSERT, UPDATE, DELETE)
+          console.log('[Settings] Reloading categories after', change.eventType);
+          loadCategories();
+        });
+        console.log('[Settings] Successfully subscribed to category changes');
+      } catch (e) {
+        console.warn('[Settings] Category realtime not active:', e);
+      }
+    })();
+    return () => {
+      if (unsub) {
+        console.log('[Settings] Unsubscribing from category changes');
+        unsub().catch(() => {});
+      }
+    };
+  }, [session]);
 
   useEffect(() => {
     // Load user's actual login email from session
@@ -98,6 +144,63 @@ export default function SettingsScreen() {
     }
   };
 
+  const loadCategories = async () => {
+    try {
+      setLoadingCategories(true);
+      console.log('Loading categories...');
+      const data = await getCategories();
+      console.log('Categories loaded:', data.length, 'items');
+      setCategories(data);
+    } catch (e) {
+      console.error('Failed to load categories:', e);
+    } finally {
+      setLoadingCategories(false);
+    }
+  };
+
+  const handleAddCategory = async () => {
+    const name = newCategoryName.trim();
+    if (!name) {
+      Alert.alert('Validation Error', 'Please enter a category name');
+      return;
+    }
+    try {
+      await addCategory(name);
+      setNewCategoryName('');
+      // realtime will refresh; fallback refresh now
+      await loadCategories();
+    } catch (e: any) {
+      Alert.alert('Error', e?.message || 'Failed to add category');
+    }
+  };
+
+  const handleDeleteCategory = async (id: string, name: string) => {
+    console.log('Delete button clicked for category:', name, 'id:', id);
+    console.log('Session status:', !!session);
+    
+    if (!session) {
+      console.log('No session, showing error');
+      Alert.alert('Error', 'You must be logged in to delete categories');
+      return;
+    }
+    
+    console.log('Showing confirmation dialog');
+
+    try {
+      console.log('Calling deleteCategory with id:', id);
+      const result = await deleteCategory(id);
+      console.log('deleteCategory returned:', result);
+      console.log('Reloading categories...');
+      // Immediately update the UI without waiting for realtime
+      await loadCategories();
+      console.log('Categories reloaded successfully');
+      Alert.alert('Success', `Category "${name}" deleted successfully`);
+    } catch (e: any) {
+      console.error('Error during delete:', e);
+      Alert.alert('Error', e?.message || 'Failed to delete category');
+    }
+  };
+
   const handleSaveOpenAIConfig = async () => {
     if (!openaiUrl.trim() || !openaiKey.trim()) {
       Alert.alert('Validation Error', 'Please enter both API URL and API Key');
@@ -138,7 +241,7 @@ export default function SettingsScreen() {
         colors={[Colors.gradientStart, Colors.gradientEnd]}
         style={styles.header}
       >
-        <Text style={styles.appName}>AuraPet</Text>
+        <Text style={styles.appName}>AuraSpend</Text>
         <Text style={styles.subtitle}>Smart Budgeting Companion</Text>
       </LinearGradient>
 
@@ -425,22 +528,43 @@ export default function SettingsScreen() {
             <TextInput
               style={styles.addCategoryInput}
               placeholder="Add new category..."
+              value={newCategoryName}
+              onChangeText={setNewCategoryName}
             />
-            <TouchableOpacity style={styles.addButton}>
+            <TouchableOpacity style={styles.addButton} onPress={handleAddCategory} disabled={!session}>
               <Text style={styles.addButtonText}>Add</Text>
             </TouchableOpacity>
           </View>
 
-          <View style={styles.categoryTags}>
-            {categories.map((category, index) => (
-              <View key={index} style={styles.categoryTag}>
-                <Text style={styles.categoryTagText}>{category}</Text>
-                <TouchableOpacity>
-                  <Ionicons name="close" size={16} color={Colors.textPrimary} />
-                </TouchableOpacity>
-              </View>
-            ))}
-          </View>
+          {loadingCategories ? (
+            <ActivityIndicator />
+          ) : categories.length === 0 ? (
+            <Text style={styles.helperText}>No categories yet. Add your first one!</Text>
+          ) : (
+            <View style={styles.categoryTags}>
+              {categories.map((category) => (
+                <View key={category.id} style={styles.categoryTag}>
+                  <Text style={styles.categoryTagText}>{category.name}</Text>
+                  <TouchableOpacity 
+                    onPress={() => {
+                      console.log('TouchableOpacity pressed for:', category.name);
+                      handleDeleteCategory(category.id, category.name);
+                    }}
+                    disabled={!session}
+                    style={styles.deleteButton}
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                    activeOpacity={0.6}
+                  >
+                    <Ionicons 
+                      name="close-circle" 
+                      size={20} 
+                      color={!session ? Colors.textSecondary : '#FF3B30'} 
+                    />
+                  </TouchableOpacity>
+                </View>
+              ))}
+            </View>
+          )}
         </View>
 
         {/* Data & Privacy */}
@@ -550,7 +674,7 @@ export default function SettingsScreen() {
         </TouchableOpacity>
 
         <Text style={styles.version}>
-          AuraSpend v{Constants.expoConfig?.version || '0.0.0'}
+          AuraSpend v{Constants.expoConfig?.extra?.appVersion || Constants.expoConfig?.version || '0.0.0'}
         </Text>
 
         <View style={{ height: 20 }} />
@@ -877,6 +1001,10 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '500',
     color: Colors.textPrimary,
+  },
+  deleteButton: {
+    padding: 4,
+    marginLeft: 4,
   },
   menuItem: {
     flexDirection: 'row',

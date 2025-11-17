@@ -78,34 +78,24 @@ export default function SignUp() {
     }
   }
 
-  return (
-    <SafeAreaView style={styles.container}>
-      <KeyboardAvoidingView 
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        style={styles.keyboardView}
+  const scrollContent = (
+    <>
+      {/* Header */}
+      <LinearGradient
+        colors={[Colors.gradientStart, Colors.gradientEnd]}
+        style={styles.header}
       >
-        {/* Header */}
-        <LinearGradient
-          colors={[Colors.gradientStart, Colors.gradientEnd]}
-          style={styles.header}
-        >
-          <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
-            <Ionicons name="arrow-back" size={24} color={Colors.white} />
-          </TouchableOpacity>
-          <View style={styles.logoContainer}>
-            <Text style={styles.logoEmoji}>🐾</Text>
-          </View>
-          <Text style={styles.appName}>Create Account</Text>
-          <Text style={styles.subtitle}>Join AuraPet today</Text>
-        </LinearGradient>
+        <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+          <Ionicons name="arrow-back" size={24} color={Colors.white} />
+        </TouchableOpacity>
+        <View style={styles.logoContainer}>
+          <Text style={styles.logoEmoji}>🐾</Text>
+        </View>
+        <Text style={styles.appName}>Create Account</Text>
+        <Text style={styles.subtitle}>Join AuraSpend today</Text>
+      </LinearGradient>
 
-        <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-          <ScrollView 
-            style={styles.content} 
-            contentContainerStyle={styles.scrollContent}
-            showsVerticalScrollIndicator={false}
-            keyboardShouldPersistTaps="handled"
-          >
+      <View style={styles.content}>
         <Text style={styles.welcomeText}>Get Started</Text>
         <Text style={styles.descriptionText}>Create your account to start managing your finances</Text>
 
@@ -201,9 +191,35 @@ export default function SignUp() {
         </View>
 
         <View style={{ height: 40 }} />
-          </ScrollView>
-        </TouchableWithoutFeedback>
-      </KeyboardAvoidingView>
+      </View>
+    </>
+  );
+
+  return (
+    <SafeAreaView style={styles.container}>
+      {Platform.OS === 'web' ? (
+        <ScrollView 
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+        >
+          {scrollContent}
+        </ScrollView>
+      ) : (
+        <KeyboardAvoidingView 
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          style={styles.keyboardView}
+        >
+          <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+            <ScrollView 
+              contentContainerStyle={styles.scrollContent}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+            >
+              {scrollContent}
+            </ScrollView>
+          </TouchableWithoutFeedback>
+        </KeyboardAvoidingView>
+      )}
     </SafeAreaView>
   );
 }
@@ -252,11 +268,10 @@ const styles = StyleSheet.create({
     opacity: 0.9,
   },
   content: {
-    flex: 1,
     padding: 24,
   },
   scrollContent: {
-    paddingBottom: 40,
+    flexGrow: 1,
   },
   welcomeText: {
     fontSize: 28,

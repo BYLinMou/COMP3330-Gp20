@@ -6,17 +6,24 @@ import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import * as ImagePicker from 'expo-image-picker';
 import { Colors } from '../../constants/theme';
-import { addTransaction, getCategories, type Category } from '../../src/services/transactions';
+import { addTransaction } from '../../src/services/transactions';
+import { getCategories, addCategory, subscribeToCategoryChanges, type Category } from '../../src/services/categories';
 import { processReceiptImage, type ReceiptData, type ProcessingProgress } from '../../src/services/receipt-processor';
 import { useAuth } from '../../src/providers/AuthProvider';
 
 type InputMethod = 'manual' | 'receipt' | 'voice';
 
+interface ReceiptItem {
+  name: string;
+  amount: number;  // quantity
+  price: number;   // unit price
+}
+
 export default function AddScreen() {
   const { session } = useAuth();
   const [inputMethod, setInputMethod] = useState<InputMethod>('receipt');
   const [amount, setAmount] = useState('');
-  const [description, setDescription] = useState('');
+  const [itemlist, setItemlist] = useState<ReceiptItem[]>([]);
   const [categoryId, setCategoryId] = useState('');
   const [merchant, setMerchant] = useState('');
   const [selectedDate, setSelectedDate] = useState(new Date());
@@ -31,6 +38,10 @@ export default function AddScreen() {
   // Modal states
   const [showCategoryModal, setShowCategoryModal] = useState(false);
   const [showDatePicker, setShowDatePicker] = useState(false);
+  const [showTimePicker, setShowTimePicker] = useState(false);
+  const [showNewCategoryModal, setShowNewCategoryModal] = useState(false);
+  const [suggestedCategory, setSuggestedCategory] = useState<string>('');
+  const [pendingReceiptData, setPendingReceiptData] = useState<ReceiptData | null>(null);
   
 
 
@@ -41,19 +52,62 @@ export default function AddScreen() {
     { label: '$45 Groceries', amount: 45 },
   ];
 
-  // Load categories on mount
+  // Auto-calculate amount from itemlist
+  useEffect(() => {
+    if (itemlist.length > 0) {
+      const total = itemlist.reduce((sum, item) => sum + (item.price * item.amount), 0);
+      setAmount(total.toFixed(2));
+    }
+  }, [itemlist]);
+
+  // Load categories on mount and subscribe to realtime changes
   useEffect(() => {
     loadCategories();
   }, []);
+
+  // Subscribe to category changes for realtime updates
+  useEffect(() => {
+    if (!session) return;
+    let unsub: undefined | (() => Promise<void>);
+    (async () => {
+      try {
+        console.log('[Add] Subscribing to category changes...');
+        unsub = await subscribeToCategoryChanges((change) => {
+          console.log('[Add] Category change received:', {
+            eventType: change.eventType,
+            newCategory: change.new?.name,
+            oldCategory: change.old?.name,
+            currentlySelected: categoryId,
+          });
+          
+          // If a category is deleted and it's currently selected, clear the selection
+          if (change.eventType === 'DELETE' && change.old?.id === categoryId) {
+            console.log('[Add] Currently selected category was deleted, clearing selection');
+            setCategoryId('');
+          }
+          // Reload categories for any event (INSERT, UPDATE, DELETE)
+          console.log('[Add] Reloading categories after', change.eventType);
+          loadCategories();
+        });
+        console.log('[Add] Successfully subscribed to category changes');
+      } catch (e) {
+        console.warn('[Add] Category realtime subscription failed:', e);
+      }
+    })();
+    return () => {
+      if (unsub) {
+        console.log('[Add] Unsubscribing from category changes');
+        unsub().catch(() => {});
+      }
+    };
+  }, [categoryId, session]);
 
   const loadCategories = async () => {
     try {
       setLoadingCategories(true);
       const data = await getCategories();
       setCategories(data);
-      if (data.length > 0) {
-        setCategoryId(data[0].id);
-      }
+      // Don't auto-select a category - let user explicitly choose
     } catch (error) {
       console.error('Failed to load categories:', error);
     } finally {
@@ -61,10 +115,64 @@ export default function AddScreen() {
     }
   };
 
-  const handleDateChange = (event: any, selectedDate?: Date) => {
-    setShowDatePicker(Platform.OS === 'ios');
-    if (selectedDate) {
-      setSelectedDate(selectedDate);
+  const handleDateChange = (event: any, date?: Date) => {
+    console.log('[DatePicker] Event:', event);
+    console.log('[DatePicker] Selected Date:', date);
+    
+    try {
+      if (Platform.OS === 'android') {
+        setShowDatePicker(false);
+        
+        if (event.type === 'dismissed') {
+          console.log('[DatePicker] User cancelled');
+          return;
+        }
+        
+        if (date && !isNaN(date.getTime())) {
+          // On Android: first select date, then show time picker
+          setSelectedDate(date);
+          console.log('[DatePicker] Date selected, now showing time picker');
+          // Show time picker after a short delay
+          setTimeout(() => setShowTimePicker(true), 100);
+        }
+      } else {
+        // iOS: datetime mode works fine
+        if (date && !isNaN(date.getTime())) {
+          setSelectedDate(date);
+        }
+      }
+    } catch (e) {
+      console.error('[DatePicker] Error:', e);
+      setShowDatePicker(false);
+    }
+  };
+
+  const handleTimeChange = (event: any, time?: Date) => {
+    console.log('[TimePicker] Event:', event);
+    console.log('[TimePicker] Selected Time:', time);
+    
+    try {
+      setShowTimePicker(false);
+      
+      if (event.type === 'dismissed') {
+        console.log('[TimePicker] User cancelled');
+        return;
+      }
+      
+      if (time && !isNaN(time.getTime())) {
+        // Combine the selected date with the selected time
+        const newDateTime = new Date(selectedDate);
+        newDateTime.setHours(time.getHours());
+        newDateTime.setMinutes(time.getMinutes());
+        newDateTime.setSeconds(0);
+        newDateTime.setMilliseconds(0);
+        
+        console.log('[TimePicker] Final datetime:', newDateTime);
+        setSelectedDate(newDateTime);
+      }
+    } catch (e) {
+      console.error('[TimePicker] Error:', e);
+      setShowTimePicker(false);
     }
   };
 
@@ -122,43 +230,84 @@ export default function AddScreen() {
   const handleReceiptImageProcessing = async (imageUri: string) => {
     try {
       setProcessingReceipt(true);
-      
-      // 显示处理进度
-      let progressMessage = 'Starting receipt processing...';
-      Alert.alert('Processing Receipt', progressMessage);
 
       // 调用独立的收据处理器（来自 receipt-processor.ts）
       const receiptData = await processReceiptImage(imageUri, (progress: ProcessingProgress) => {
-        progressMessage = `${progress.message} (${progress.progress}%)`;
-        console.log('[Add Screen]', progressMessage);
+        console.log('[Add Screen]', `${progress.message} (${progress.progress}%)`);
       });
 
       console.log('[Add Screen] Receipt data received:', receiptData);
+      console.log('[Add Screen] isNewCategory:', receiptData.isNewCategory);
+      console.log('[Add Screen] category:', receiptData.category);
 
       // 自动填充表单
       setMerchant(receiptData.merchant);
       setAmount(receiptData.amount.toString());
-      setDescription(receiptData.items?.join(', ') || receiptData.description || '');
+      
+      // 如果是字符串数组（旧格式），转换为 ReceiptItem 数组
+      if (receiptData.items && Array.isArray(receiptData.items) && receiptData.items.length > 0) {
+        const firstItem = receiptData.items[0];
+        if (typeof firstItem === 'object' && firstItem !== null && 'name' in firstItem) {
+          // 已经是 ReceiptItem 格式
+          setItemlist(receiptData.items as unknown as ReceiptItem[]);
+        } else if (typeof firstItem === 'string') {
+          // 字符串数组，转换为 ReceiptItem 格式
+          const convertedItems: ReceiptItem[] = (receiptData.items as unknown as string[]).map(name => ({
+            name,
+            amount: 1,
+            price: 0,
+          }));
+          setItemlist(convertedItems);
+        }
+      }
+      
+      // 合并 description 到 notes
+      if (receiptData.description) {
+        setNotes(receiptData.description);
+      }
       
       if (receiptData.date) {
+        // Parse the datetime string (YYYY-MM-DDTHH:MM format) into Date object
         setSelectedDate(new Date(receiptData.date));
       }
 
-      // 尝试匹配分类
-      if (receiptData.category && categories.length > 0) {
-        const matchedCategory = categories.find(
-          cat => cat.name.toLowerCase().includes(receiptData.category!.toLowerCase())
-        );
-        if (matchedCategory) {
-          setCategoryId(matchedCategory.id);
+      // 处理分类建议
+      if (receiptData.category) {
+        if (receiptData.isNewCategory) {
+          // AI 建议了新分类，显示确认对话框（Web 兼容）
+          console.log('[Add Screen] Showing new category confirmation modal');
+          setSuggestedCategory(receiptData.category);
+          setPendingReceiptData(receiptData);
+          setShowNewCategoryModal(true);
+        } else {
+          // 使用现有分类
+          const matchedCategory = categories.find(
+            cat => cat.name.toLowerCase() === receiptData.category!.toLowerCase()
+          );
+          if (matchedCategory) {
+            setCategoryId(matchedCategory.id);
+          }
+          if (Platform.OS === 'web') {
+            alert('✅ Receipt information extracted! Please review the details and save.');
+          } else {
+            Alert.alert(
+              '✅ Success', 
+              'Receipt information extracted! Please review the details and save.',
+              [{ text: 'OK' }]
+            );
+          }
+        }
+      } else {
+        if (Platform.OS === 'web') {
+          alert('✅ Receipt information extracted! Please select a category and save.');
+        } else {
+          Alert.alert(
+            '✅ Success', 
+            'Receipt information extracted! Please select a category and save.',
+            [{ text: 'OK' }]
+          );
         }
       }
-
-      Alert.alert(
-        '✅ Success', 
-        'Receipt information extracted! Please review the details and save.',
-        [{ text: 'OK' }]
-      );
     } catch (error: any) {
       console.error('[Add Screen] Receipt processing error:', error);
       Alert.alert(
@@ -174,18 +323,15 @@ export default function AddScreen() {
   const handleSaveTransaction = async () => {
     // Check authentication first
     if (!session) {
+      console.warn('[Save Transaction] Blocked: no active session');
       Alert.alert('Authentication Required', 'Please sign in to save transactions');
       return;
     }
 
     // Validation
-    if (!amount || isNaN(parseFloat(amount))) {
-      Alert.alert('Validation Error', 'Please enter a valid amount');
-      return;
-    }
-
-    if (!description.trim()) {
-      Alert.alert('Validation Error', 'Please enter a description');
+    if (itemlist.length === 0 && (!amount || isNaN(parseFloat(amount)))) {
+      console.warn('[Save Transaction] Blocked: no items or invalid amount');
+      Alert.alert('Validation Error', 'Please enter an amount or add items');
       return;
     }
 
@@ -203,13 +349,24 @@ export default function AddScreen() {
         source = 'ai';
       }
 
+      // 构建商家名称
+      let merchantName = merchant.trim();
+      if (!merchantName && itemlist.length > 0) {
+        // 如果没有商家，用第一个项目名称作为 fallback
+        merchantName = itemlist[0].name || 'Transaction';
+      }
+      if (!merchantName) {
+        merchantName = 'Transaction';
+      }
+
       const transactionData = {
         amount: numericAmount,
         occurred_at: selectedDate.toISOString(),
-        merchant: merchant.trim() || description.trim(), // Use merchant or description as fallback
+        merchant: merchantName,
         category_id: categoryId || null,
         source,
-        note: description.trim() + (notes.trim() ? ' | ' + notes.trim() : ''), // Combine description and notes
+        note: notes.trim(),
+        items: itemlist.length > 0 ? itemlist : undefined, // 只有在有项目时才保存
       };
 
       console.log('Saving transaction:', transactionData);
@@ -222,7 +379,7 @@ export default function AddScreen() {
           onPress: () => {
             // Reset form
             setAmount('');
-            setDescription('');
+            setItemlist([]);
             setMerchant('');
             setNotes('');
             setSelectedDate(new Date());
@@ -234,7 +391,56 @@ export default function AddScreen() {
       const errorMessage = error?.message || 'Failed to save transaction. Please try again.';
       Alert.alert('Error', errorMessage);
     } finally {
+      console.log('[Save Transaction] Submit flow finished');
       setSubmitting(false);
+    }
+  };
+
+  const handleCreateNewCategory = async () => {
+    try {
+      console.log('[Add Screen] Creating new category:', suggestedCategory);
+      const newCategory = await addCategory(suggestedCategory);
+      setCategoryId(newCategory.id);
+      await loadCategories(); // 重新加载分类列表
+      setShowNewCategoryModal(false);
+      
+      if (Platform.OS === 'web') {
+        alert(`✅ Category "${suggestedCategory}" created and selected!\n\nReceipt information extracted! Please review the details and save.`);
+      } else {
+        Alert.alert(
+          '✅ Success', 
+          `Category "${suggestedCategory}" created and selected!\n\nReceipt information extracted! Please review the details and save.`,
+          [{ text: 'OK' }]
+        );
+      }
+    } catch (error: any) {
+      console.error('Failed to create category:', error);
+      setShowNewCategoryModal(false);
+      
+      if (Platform.OS === 'web') {
+        alert(`⚠️ Category Creation Failed\n\n${error?.message || 'Failed to create the suggested category. Please create it manually in Settings.'}`);
+      } else {
+        Alert.alert(
+          '⚠️ Category Creation Failed',
+          error?.message || 'Failed to create the suggested category. Please create it manually in Settings.',
+          [{ text: 'OK' }]
+        );
+      }
+    }
+  };
+
+  const handleSkipNewCategory = () => {
+    console.log('[Add Screen] User skipped creating new category');
+    setShowNewCategoryModal(false);
+    
+    if (Platform.OS === 'web') {
+      alert('✅ Receipt information extracted! Please select a category and save.');
+    } else {
+      Alert.alert(
+        '✅ Success', 
+        'Receipt information extracted! Please select a category and save.',
+        [{ text: 'OK' }]
+      );
     }
   };
 
@@ -267,7 +473,7 @@ export default function AddScreen() {
         colors={[Colors.gradientStart, Colors.gradientEnd]}
         style={styles.header}
       >
-        <Text style={styles.appName}>AuraPet</Text>
+        <Text style={styles.appName}>AuraSpend</Text>
         <Text style={styles.subtitle}>Smart Budgeting Companion</Text>
       </LinearGradient>
 
@@ -409,61 +615,37 @@ export default function AddScreen() {
                 keyboardType="decimal-pad"
                 value={amount}
                 onChangeText={setAmount}
+                editable={itemlist.length === 0} // Read-only if items present
               />
               <Ionicons name="chevron-down" size={20} color={Colors.textSecondary} />
             </View>
           </View>
 
-          {/* Description */}
+          {/* Date & Time (occurred_at) */}
           <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>
-              Description <Text style={styles.required}>*</Text>
-            </Text>
-            <TextInput
-              style={styles.textInput}
-              placeholder="What did you buy?"
-              value={description}
-              onChangeText={setDescription}
-            />
-          </View>
-
-          {/* Category */}
-          <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>Category</Text>
-            <TouchableOpacity 
-              style={styles.selectInput}
-              onPress={() => setShowCategoryModal(true)}
-              disabled={loadingCategories}
-            >
-              <Text style={categoryId ? styles.selectValue : styles.selectPlaceholder}>
-                {categoryId 
-                  ? categories.find(c => c.id === categoryId)?.name || 'Select category'
-                  : 'Select category'}
-              </Text>
-              <Ionicons name="chevron-down" size={20} color={Colors.textSecondary} />
-            </TouchableOpacity>
-          </View>
-
-          {/* Merchant */}
-          <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>Merchant (Optional)</Text>
-            <TextInput
-              style={styles.textInput}
-              placeholder="Enter merchant name (or use description)"
-              value={merchant}
-              onChangeText={setMerchant}
-            />
-          </View>
-
-          {/* Date (occurred_at) */}
-          <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>Date (Occurred At)</Text>
+            <Text style={styles.inputLabel}>Date & Time <Text style={styles.required}>*</Text></Text>
             {Platform.OS === 'web' ? (
               <input
-                type="date"
-                value={selectedDate.toISOString().split('T')[0]}
-                onChange={(e) => setSelectedDate(new Date(e.target.value))}
-                max={new Date().toISOString().split('T')[0]}
+                type="datetime-local"
+                value={(() => {
+                  try {
+                    return selectedDate.toISOString().slice(0, 16);
+                  } catch (e) {
+                    console.error('Date formatting error:', e);
+                    return new Date().toISOString().slice(0, 16);
+                  }
+                })()}
+                onChange={(e) => {
+                  try {
+                    const newDate = new Date(e.target.value);
+                    if (!isNaN(newDate.getTime())) {
+                      setSelectedDate(newDate);
+                    }
+                  } catch (e) {
+                    console.error('Date parsing error:', e);
+                  }
+                }}
+                max={new Date().toISOString().slice(0, 16)}
                 style={{
                   backgroundColor: Colors.gray100,
                   borderRadius: 8,
@@ -483,25 +665,138 @@ export default function AddScreen() {
                   <View style={styles.dateTextInput}>
                     <Ionicons name="calendar-outline" size={20} color={Colors.textSecondary} style={{ marginRight: 8 }} />
                     <Text style={styles.dateValueText}>
-                      {selectedDate.toLocaleDateString('en-US', { 
-                        month: '2-digit', 
-                        day: '2-digit', 
-                        year: 'numeric' 
-                      })}
+                      {(() => {
+                        try {
+                          return selectedDate.toLocaleString('en-US', { 
+                            month: '2-digit', 
+                            day: '2-digit', 
+                            year: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                            hour12: false
+                          });
+                        } catch (e) {
+                          console.error('Date formatting error:', e);
+                          return 'Invalid date';
+                        }
+                      })()}
                     </Text>
                   </View>
                 </TouchableOpacity>
                 {showDatePicker && (
                   <DateTimePicker
-                    value={selectedDate}
-                    mode="date"
+                    value={selectedDate instanceof Date && !isNaN(selectedDate.getTime()) ? selectedDate : new Date()}
+                    mode={Platform.OS === 'android' ? 'date' : 'datetime'}
                     display="default"
                     onChange={handleDateChange}
                     maximumDate={new Date()}
                   />
                 )}
+                {showTimePicker && Platform.OS === 'android' && (
+                  <DateTimePicker
+                    value={selectedDate instanceof Date && !isNaN(selectedDate.getTime()) ? selectedDate : new Date()}
+                    mode="time"
+                    display="default"
+                    onChange={handleTimeChange}
+                  />
+                )}
               </>
             )}
+          </View>
+
+          {/* Category */}
+          <View style={styles.inputGroup}>
+            <Text style={styles.inputLabel}>Category</Text>
+            <TouchableOpacity 
+              style={styles.selectInput}
+              onPress={() => setShowCategoryModal(true)}
+              disabled={loadingCategories}
+            >
+              <Text style={categoryId ? styles.selectValue : styles.selectPlaceholder}>
+                {categoryId 
+                  ? categories.find(c => c.id === categoryId)?.name || 'No Category'
+                  : 'No Category'}
+              </Text>
+              <Ionicons name="chevron-down" size={20} color={Colors.textSecondary} />
+            </TouchableOpacity>
+          </View>
+
+          {/* Item List */}
+          <View style={styles.inputGroup}>
+            <Text style={styles.inputLabel}>Item List</Text>
+            {itemlist.length > 0 && (
+              <View style={styles.itemListHeader}>
+                <Text style={[styles.itemHeaderText, { flex: 1 }]}>Item</Text>
+                <Text style={[styles.itemHeaderText, { width: 60 }]}>Qty</Text>
+                <Text style={[styles.itemHeaderText, { width: 70 }]}>Price</Text>
+                <Text style={[styles.itemHeaderText, { width: 50 }]}>Total</Text>
+              </View>
+            )}
+            {itemlist.map((item, index) => (
+              <View key={index} style={styles.itemRow}>
+                <TextInput
+                  style={[styles.itemInput, { flex: 1 }]}
+                  placeholder="Item name"
+                  value={item.name}
+                  onChangeText={(text) => {
+                    const newList = [...itemlist];
+                    newList[index].name = text;
+                    setItemlist(newList);
+                  }}
+                />
+                <TextInput
+                  style={styles.itemInputSmall}
+                  placeholder="Qty"
+                  keyboardType="decimal-pad"
+                  value={item.amount.toString()}
+                  onChangeText={(text) => {
+                    const newList = [...itemlist];
+                    newList[index].amount = parseFloat(text) || 1;
+                    setItemlist(newList);
+                  }}
+                />
+                <TextInput
+                  style={styles.itemInputSmall}
+                  placeholder="Price"
+                  keyboardType="decimal-pad"
+                  value={item.price.toFixed(2)}
+                  onChangeText={(text) => {
+                    const newList = [...itemlist];
+                    newList[index].price = parseFloat(text) || 0;
+                    setItemlist(newList);
+                  }}
+                />
+                <View style={[styles.itemInputSmall, styles.itemTotal]}>
+                  <Text style={styles.itemTotalText}>
+                    ${(item.amount * item.price).toFixed(2)}
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  style={styles.itemDeleteButton}
+                  onPress={() => setItemlist(itemlist.filter((_, i) => i !== index))}
+                >
+                  <Ionicons name="trash-outline" size={18} color={Colors.error} />
+                </TouchableOpacity>
+              </View>
+            ))}
+            <TouchableOpacity
+              style={styles.addItemButton}
+              onPress={() => setItemlist([...itemlist, { name: '', amount: 1, price: 0 }])}
+            >
+              <Ionicons name="add-circle-outline" size={20} color={Colors.primary} />
+              <Text style={styles.addItemText}>Add Item</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Merchant */}
+          <View style={styles.inputGroup}>
+            <Text style={styles.inputLabel}>Merchant (Optional)</Text>
+            <TextInput
+              style={styles.textInput}
+              placeholder="Enter merchant name"
+              value={merchant}
+              onChangeText={setMerchant}
+            />
           </View>
 
           {/* Notes */}
@@ -573,38 +868,104 @@ export default function AddScreen() {
             <ScrollView style={styles.modalList}>
               {loadingCategories ? (
                 <ActivityIndicator style={styles.modalLoading} />
-              ) : categories.length === 0 ? (
-                <Text style={styles.emptyText}>No categories available. Create one first!</Text>
               ) : (
-                categories.map((category) => (
+                <>
+                  {/* No Category Option */}
                   <TouchableOpacity
-                    key={category.id}
                     style={[
                       styles.modalItem,
-                      categoryId === category.id && styles.modalItemSelected
+                      !categoryId && styles.modalItemSelected
                     ]}
                     onPress={() => {
-                      setCategoryId(category.id);
+                      setCategoryId('');
                       setShowCategoryModal(false);
                     }}
                   >
                     <Text style={[
                       styles.modalItemText,
-                      categoryId === category.id && styles.modalItemTextSelected
+                      !categoryId && styles.modalItemTextSelected
                     ]}>
-                      {category.name}
+                      No Category
                     </Text>
-                    {categoryId === category.id && (
+                    {!categoryId && (
                       <Ionicons name="checkmark" size={20} color={Colors.primary} />
                     )}
                   </TouchableOpacity>
-                ))
+                  
+                  {/* User Categories */}
+                  {categories.length === 0 ? (
+                    <Text style={styles.emptyText}>No custom categories. Create one in Settings!</Text>
+                  ) : (
+                    categories.map((category) => (
+                      <TouchableOpacity
+                        key={category.id}
+                        style={[
+                          styles.modalItem,
+                          categoryId === category.id && styles.modalItemSelected
+                        ]}
+                        onPress={() => {
+                          setCategoryId(category.id);
+                          setShowCategoryModal(false);
+                        }}
+                      >
+                        <Text style={[
+                          styles.modalItemText,
+                          categoryId === category.id && styles.modalItemTextSelected
+                        ]}>
+                          {category.name}
+                        </Text>
+                        {categoryId === category.id && (
+                          <Ionicons name="checkmark" size={20} color={Colors.primary} />
+                        )}
+                      </TouchableOpacity>
+                    ))
+                  )}
+                </>
               )}
             </ScrollView>
           </View>
         </View>
       </Modal>
 
+      {/* New Category Confirmation Modal */}
+      <Modal
+        visible={showNewCategoryModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowNewCategoryModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.confirmModalContent}>
+            <View style={styles.confirmModalIcon}>
+              <Ionicons name="sparkles" size={48} color={Colors.primary} />
+            </View>
+            
+            <Text style={styles.confirmModalTitle}>🤖 AI Suggestion</Text>
+            
+            <Text style={styles.confirmModalMessage}>
+              AI suggests creating a new category:{'\n'}
+              <Text style={styles.confirmModalCategory}>"{suggestedCategory}"</Text>
+              {'\n\n'}Would you like to create this category?
+            </Text>
+            
+            <View style={styles.confirmModalButtons}>
+              <TouchableOpacity 
+                style={[styles.confirmModalButton, styles.confirmModalButtonSecondary]}
+                onPress={handleSkipNewCategory}
+              >
+                <Text style={styles.confirmModalButtonTextSecondary}>No, Skip</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity 
+                style={[styles.confirmModalButton, styles.confirmModalButtonPrimary]}
+                onPress={handleCreateNewCategory}
+              >
+                <Text style={styles.confirmModalButtonTextPrimary}>Yes, Create</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
     </SafeAreaView>
   );
@@ -969,5 +1330,130 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: Colors.textSecondary,
     fontFamily: 'monospace',
+  },
+  itemListHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+    paddingBottom: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.gray200,
+  },
+  itemHeaderText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: Colors.textSecondary,
+  },
+  itemRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+    gap: 8,
+  },
+  itemInput: {
+    backgroundColor: Colors.gray100,
+    borderRadius: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    fontSize: 14,
+    color: Colors.textPrimary,
+  },
+  itemInputSmall: {
+    backgroundColor: Colors.gray100,
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 8,
+    fontSize: 14,
+    color: Colors.textPrimary,
+    textAlign: 'center',
+  },
+  itemTotal: {
+    backgroundColor: Colors.gray50,
+    justifyContent: 'center',
+  },
+  itemTotalText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: Colors.primary,
+  },
+  itemDeleteButton: {
+    paddingHorizontal: 8,
+    paddingVertical: 8,
+  },
+  addItemButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    gap: 8,
+    borderTopWidth: 1,
+    borderTopColor: Colors.gray200,
+    marginTop: 8,
+    paddingTop: 12,
+  },
+  addItemText: {
+    fontSize: 14,
+    color: Colors.primary,
+    fontWeight: '600',
+  },
+  confirmModalContent: {
+    backgroundColor: Colors.white,
+    borderRadius: 20,
+    padding: 30,
+    marginHorizontal: 20,
+    alignItems: 'center',
+    maxWidth: 400,
+    alignSelf: 'center',
+  },
+  confirmModalIcon: {
+    marginBottom: 20,
+  },
+  confirmModalTitle: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: Colors.textPrimary,
+    marginBottom: 16,
+    textAlign: 'center',
+  },
+  confirmModalMessage: {
+    fontSize: 16,
+    color: Colors.textSecondary,
+    textAlign: 'center',
+    lineHeight: 24,
+    marginBottom: 24,
+  },
+  confirmModalCategory: {
+    fontWeight: '700',
+    color: Colors.primary,
+    fontSize: 18,
+  },
+  confirmModalButtons: {
+    flexDirection: 'row',
+    gap: 12,
+    width: '100%',
+  },
+  confirmModalButton: {
+    flex: 1,
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  confirmModalButtonPrimary: {
+    backgroundColor: Colors.primary,
+  },
+  confirmModalButtonSecondary: {
+    backgroundColor: Colors.gray100,
+    borderWidth: 1,
+    borderColor: Colors.gray300,
+  },
+  confirmModalButtonTextPrimary: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: Colors.white,
+  },
+  confirmModalButtonTextSecondary: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: Colors.textPrimary,
   },
 });

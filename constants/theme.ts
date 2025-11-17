@@ -1,5 +1,5 @@
 /**
- * AuraPet Theme Colors - Purple/Blue gradient branding
+ * AuraSpend Theme Colors - Purple/Blue gradient branding
  */
 
 import { Platform } from 'react-native';
