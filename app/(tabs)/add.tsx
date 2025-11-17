@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, ScrollView, StyleSheet, TouchableOpacity, TextInput, Alert, ActivityIndicator, Modal, Platform } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, TouchableOpacity, TextInput as RNTextInput, Alert, ActivityIndicator, Modal, Platform, Animated } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import Swipeable from 'react-native-gesture-handler/Swipeable';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
@@ -11,6 +12,7 @@ import { getCategories, addCategory, subscribeToCategoryChanges, type Category }
 import { getCurrencies, type Currency } from '../../src/services/currencies';
 import { processReceiptImage, type ReceiptData, type ProcessingProgress } from '../../src/services/receipt-processor';
 import { useAuth } from '../../src/providers/AuthProvider';
+import { TextInput as GestureTextInput } from 'react-native-gesture-handler';
 
 type InputMethod = 'manual' | 'receipt';
 
@@ -48,7 +50,10 @@ export default function AddScreen() {
   const [suggestedCategory, setSuggestedCategory] = useState<string>('');
   const [pendingReceiptData, setPendingReceiptData] = useState<ReceiptData | null>(null);
   
-
+  // Editing state for item inputs (string values while typing)
+  const [itemEditingState, setItemEditingState] = useState<{
+    [key: string]: { amountStr?: string; priceStr?: string };
+  }>({});
 
   const quickAddItems = [
     { label: '$4.5 Coffee', amount: 4.5 },
@@ -69,6 +74,7 @@ export default function AddScreen() {
   useEffect(() => {
     if (itemlist.length === 0) {
       setUserOverrodeAmount(false);
+      setItemEditingState({});
     }
   }, [itemlist]);
 
@@ -614,7 +620,7 @@ export default function AddScreen() {
                 </Text>
                 <Ionicons name="chevron-down" size={16} color={Colors.textSecondary} />
               </TouchableOpacity>
-              <TextInput
+              <RNTextInput
                 style={styles.amountField}
                 placeholder="0.00"
                 keyboardType="decimal-pad"
@@ -736,60 +742,141 @@ export default function AddScreen() {
           <View style={styles.inputGroup}>
             <Text style={styles.inputLabel}>Item List</Text>
             {itemlist.length > 0 && (
+              <Text style={styles.itemListSubtext}>
+                Swipe left on any item to delete it.
+              </Text>
+            )}
+            {itemlist.length > 0 && (
               <View style={styles.itemListHeader}>
                 <Text style={[styles.itemHeaderText, { flex: 1 }]}>Item</Text>
-                <Text style={[styles.itemHeaderText, { width: 60 }]}>Qty</Text>
-                <Text style={[styles.itemHeaderText, { width: 70 }]}>Price</Text>
+                <Text style={[styles.itemHeaderText, { width: 30 }]}>Qty</Text>
+                <Text style={[styles.itemHeaderText, { width: 40 }]}>Price</Text>
                 <Text style={[styles.itemHeaderText, { width: 50 }]}>Total</Text>
               </View>
             )}
-            {itemlist.map((item, index) => (
-              <View key={index} style={styles.itemRow}>
-                <TextInput
-                  style={[styles.itemInput, { flex: 1 }]}
-                  placeholder="Item name"
-                  value={item.name}
-                  onChangeText={(text) => {
-                    const newList = [...itemlist];
-                    newList[index].name = text;
-                    setItemlist(newList);
-                  }}
-                />
-                <TextInput
-                  style={styles.itemInputSmall}
-                  placeholder="Qty"
-                  keyboardType="decimal-pad"
-                  value={item.amount.toString()}
-                  onChangeText={(text) => {
-                    const newList = [...itemlist];
-                    newList[index].amount = parseFloat(text) || 1;
-                    setItemlist(newList);
-                  }}
-                />
-                <TextInput
-                  style={styles.itemInputSmall}
-                  placeholder="Price"
-                  keyboardType="decimal-pad"
-                  value={item.price.toFixed(2)}
-                  onChangeText={(text) => {
-                    const newList = [...itemlist];
-                    newList[index].price = parseFloat(text) || 0;
-                    setItemlist(newList);
-                  }}
-                />
-                <View style={[styles.itemInputSmall, styles.itemTotal]}>
-                  <Text style={styles.itemTotalText}>
-                    {selectedCurrency ? currencyOptions.find(c => c.code === selectedCurrency)?.symbol : '$'}{(item.amount * item.price).toFixed(2)}
-                  </Text>
-                </View>
-                <TouchableOpacity
-                  style={styles.itemDeleteButton}
-                  onPress={() => setItemlist(itemlist.filter((_, i) => i !== index))}
+            {itemlist.map((item, index) => {
+              const renderRightActions = (progress: Animated.AnimatedInterpolation<number>, dragX: Animated.AnimatedInterpolation<number>) => {
+                const trans = dragX.interpolate({
+                  inputRange: [-80, 0],
+                  outputRange: [0, 80],
+                  extrapolate: 'clamp',
+                });
+                return (
+                  <Animated.View
+                    style={[
+                      styles.swipeDeleteContainer,
+                      { transform: [{ translateX: trans }] },
+                    ]}
+                  >
+                    <TouchableOpacity
+                      style={styles.swipeDeleteButton}
+                      onPress={() => setItemlist(itemlist.filter((_, i) => i !== index))}
+                    >
+                      <Ionicons name="trash-outline" size={16} color={Colors.white} />
+                      <Text style={styles.swipeDeleteText}>Delete</Text>
+                    </TouchableOpacity>
+                  </Animated.View>
+                );
+              };
+
+              return (
+                <Swipeable
+                  key={index}
+                  renderRightActions={renderRightActions}
+                  overshootRight={false}
+                  friction={2}
+                  enableTrackpadTwoFingerGesture
                 >
-                  <Ionicons name="trash-outline" size={18} color={Colors.error} />
-                </TouchableOpacity>
-              </View>
-            ))}
+                  <View style={styles.itemRow}>
+                    <GestureTextInput
+                      style={styles.itemInput}
+                      placeholder="Item name"
+                      value={item.name}
+                      onChangeText={(text) => {
+                        const newList = [...itemlist];
+                        newList[index].name = text;
+                        setItemlist(newList);
+                      }}
+                      scrollEnabled={false}
+                      numberOfLines={1}
+                    />
+                    <GestureTextInput
+                      style={[styles.itemInputSmall, { width: 25 }]}
+                      placeholder="Qty"
+                      keyboardType="decimal-pad"
+                      scrollEnabled={false}
+                      numberOfLines={1}
+                      value={itemEditingState[index]?.amountStr ?? item.amount.toString()}
+                      onChangeText={(text) => {
+                        // Store raw input string while typing
+                        setItemEditingState(prev => ({
+                          ...prev,
+                          [index]: { ...prev[index], amountStr: text }
+                        }));
+                      }}
+                      onBlur={() => {
+                        // Parse and validate on blur
+                        const rawValue = itemEditingState[index]?.amountStr;
+                        if (rawValue !== undefined) {
+                          const normalized = rawValue.replace(/,/g, '.');
+                          const parsed = parseFloat(normalized);
+                          const newList = [...itemlist];
+                          newList[index].amount = !isNaN(parsed) && parsed > 0 ? parsed : 1;
+                          setItemlist(newList);
+                          // Clear editing state for this field
+                          setItemEditingState(prev => {
+                            const updated = { ...prev };
+                            if (updated[index]) {
+                              delete updated[index].amountStr;
+                            }
+                            return updated;
+                          });
+                        }
+                      }}
+                    />
+                    <GestureTextInput
+                      style={[styles.itemInputSmall, { width: 35 }]}
+                      placeholder="Price"
+                      keyboardType="decimal-pad"
+                      scrollEnabled={false}
+                      numberOfLines={1}
+                      value={itemEditingState[index]?.priceStr ?? item.price.toString()}
+                      onChangeText={(text) => {
+                        // Store raw input string while typing
+                        setItemEditingState(prev => ({
+                          ...prev,
+                          [index]: { ...prev[index], priceStr: text }
+                        }));
+                      }}
+                      onBlur={() => {
+                        // Parse and validate on blur
+                        const rawValue = itemEditingState[index]?.priceStr;
+                        if (rawValue !== undefined) {
+                          const normalized = rawValue.replace(/,/g, '.');
+                          const parsed = parseFloat(normalized);
+                          const newList = [...itemlist];
+                          newList[index].price = !isNaN(parsed) && parsed >= 0 ? parsed : 0;
+                          setItemlist(newList);
+                          // Clear editing state for this field
+                          setItemEditingState(prev => {
+                            const updated = { ...prev };
+                            if (updated[index]) {
+                              delete updated[index].priceStr;
+                            }
+                            return updated;
+                          });
+                        }
+                      }}
+                    />
+                    <View style={[styles.itemTotal, { width: 50 }]}>
+                      <Text style={styles.itemTotalText} numberOfLines={1} adjustsFontSizeToFit>
+                        {selectedCurrency ? currencyOptions.find(c => c.code === selectedCurrency)?.symbol : '$'}{(item.amount * item.price).toFixed(2)}
+                      </Text>
+                    </View>
+                  </View>
+                </Swipeable>
+              );
+            })}
             <TouchableOpacity
               style={styles.addItemButton}
               onPress={() => setItemlist([...itemlist, { name: '', amount: 1, price: 0 }])}
@@ -802,7 +889,7 @@ export default function AddScreen() {
           {/* Merchant */}
           <View style={styles.inputGroup}>
             <Text style={styles.inputLabel}>Merchant (Optional)</Text>
-            <TextInput
+            <RNTextInput
               style={styles.textInput}
               placeholder="Enter merchant name"
               value={merchant}
@@ -813,7 +900,7 @@ export default function AddScreen() {
           {/* Notes */}
           <View style={styles.inputGroup}>
             <Text style={styles.inputLabel}>Notes (Optional)</Text>
-            <TextInput
+            <RNTextInput
               style={[styles.textInput, styles.notesInput]}
               placeholder="Add any additional notes..."
               multiline
@@ -1400,37 +1487,74 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     marginBottom: 12,
-    gap: 8,
   },
   itemInput: {
+    flex: 1,
     backgroundColor: Colors.gray100,
     borderRadius: 6,
     paddingHorizontal: 10,
     paddingVertical: 8,
-    fontSize: 14,
+    fontSize: 13,
     color: Colors.textPrimary,
+    marginRight: 8,
   },
   itemInputSmall: {
     backgroundColor: Colors.gray100,
     borderRadius: 6,
-    paddingHorizontal: 8,
+    paddingHorizontal: 6,
     paddingVertical: 8,
-    fontSize: 14,
+    fontSize: 12,
     color: Colors.textPrimary,
     textAlign: 'center',
+    marginRight: 8,
   },
   itemTotal: {
     backgroundColor: Colors.gray50,
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 8,
     justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 8,
   },
   itemTotalText: {
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: '600',
     color: Colors.primary,
   },
-  itemDeleteButton: {
+  swipeHint: {
+    fontSize: 11,
+    color: Colors.textSecondary,
+    fontStyle: 'italic',
+    marginTop: 4,
+    marginBottom: 8,
+  },
+  itemListSubtext: {
+    fontSize: 13,
+    color: Colors.textSecondary,
+    marginBottom: 12,
+    lineHeight: 18,
+  },
+  swipeDeleteContainer: {
+    justifyContent: 'center',
+    alignItems: 'flex-end',
+    marginBottom: 12,
+  },
+  swipeDeleteButton: {
+    backgroundColor: Colors.error,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    width: 80,
+    height: '100%',
+    borderRadius: 6,
     paddingHorizontal: 8,
-    paddingVertical: 8,
+    gap: 4,
+  },
+  swipeDeleteText: {
+    color: Colors.white,
+    fontSize: 12,
+    fontWeight: '600',
   },
   addItemButton: {
     flexDirection: 'row',
