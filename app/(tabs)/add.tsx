@@ -9,6 +9,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { Colors } from '../../constants/theme';
 import { RefreshableScrollView } from '../../components/refreshable-scroll-view';
 import { addTransaction } from '../../src/services/transactions';
+import { addReceiptItems } from '../../src/services/items';
 import { getCategories, addCategory, subscribeToCategoryChanges, type Category } from '../../src/services/categories';
 import { getCurrencies, type Currency } from '../../src/services/currencies';
 import { getPaymentMethods, type PaymentMethod } from '../../src/services/payment-methods';
@@ -416,12 +417,27 @@ export default function AddScreen() {
         source,
         note: notes.trim(),
         payment_method: selectedPaymentMethod || null,
-        items: itemlist.length > 0 ? itemlist : undefined, // 只有在有项目时才保存
+        // items 保存在单独的 items 表中，不在 transactions 表
       };
 
       console.log('Saving transaction:', transactionData);
       const result = await addTransaction(transactionData);
       console.log('Transaction saved successfully:', result);
+
+      // 如果有分项条目，插入到 items 表
+      if (itemlist.length > 0) {
+        try {
+          console.log('[Save Transaction] Inserting receipt items...');
+          await addReceiptItems(result.id, itemlist.map(i => ({
+            name: i.name,
+            amount: i.amount,
+            price: i.price,
+          })));
+          console.log('[Save Transaction] Receipt items inserted successfully');
+        } catch (e) {
+          console.error('[Save Transaction] 插入条目失败 (仍然保存了交易):', e);
+        }
+      }
 
       Alert.alert('Success', 'Transaction saved successfully!', [
         {
