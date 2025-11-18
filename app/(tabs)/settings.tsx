@@ -4,6 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import Constants from 'expo-constants';
+import { useFocusEffect } from '@react-navigation/native';
 import { Colors } from '../../constants/theme';
 import { RefreshableScrollView } from '../../components/refreshable-scroll-view';
 import { supabase } from '../../src/services/supabase';
@@ -136,15 +137,29 @@ export default function SettingsScreen() {
     loadCurrencies();
   }, []);
 
+  // Focus effect: reload categories when navigating back to this screen
+  useFocusEffect(
+    React.useCallback(() => {
+      console.log('[Settings] Screen focused, reloading categories');
+      if (session) {
+        loadCategories();
+      }
+    }, [session])
+  );
+
   // Load categories and subscribe to realtime
   useEffect(() => {
     if (!session) return;
-    (async () => {
-      await loadCategories();
-    })();
+    
+    let mounted = true;
     let unsub: undefined | (() => Promise<void>);
+
     (async () => {
       try {
+        // Initial load
+        await loadCategories();
+        
+        // Subscribe to realtime changes
         console.log('[Settings] Subscribing to category changes...');
         unsub = await subscribeToCategoryChanges((change) => {
           console.log('[Settings] Category change received:', {
@@ -153,15 +168,19 @@ export default function SettingsScreen() {
             oldCategory: change.old?.name,
           });
           // Reload categories for any event (INSERT, UPDATE, DELETE)
-          console.log('[Settings] Reloading categories after', change.eventType);
-          loadCategories();
+          if (mounted) {
+            console.log('[Settings] Reloading categories after', change.eventType);
+            loadCategories();
+          }
         });
         console.log('[Settings] Successfully subscribed to category changes');
       } catch (e) {
-        console.warn('[Settings] Category realtime not active:', e);
+        console.warn('[Settings] Category realtime subscription failed:', e);
       }
     })();
+
     return () => {
+      mounted = false;
       if (unsub) {
         console.log('[Settings] Unsubscribing from category changes');
         unsub().catch(() => {});
@@ -367,7 +386,10 @@ export default function SettingsScreen() {
               setChatModel(config.chatModel);
               setFallbackModel(config.fallbackModel);
             }
-            // You can add more data fetching here if needed
+            // Reload categories
+            await loadCategories();
+            // Reload currencies
+            await loadCurrencies();
           } catch (error) {
             console.error('Error refreshing settings:', error);
           } finally {
