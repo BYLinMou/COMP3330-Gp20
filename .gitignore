@@ -47,7 +47,7 @@ app-example
 /android
 
 # VSCode
-.vscode/*
+.vscode
 # !.vscode/settings.json
 
 # Android Studio

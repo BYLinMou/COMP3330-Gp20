@@ -1,16 +1,19 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, ScrollView, StyleSheet, Dimensions, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, Dimensions, ActivityIndicator, TouchableOpacity, Modal, Alert, Pressable, Animated } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../constants/theme';
+import { RefreshableScrollView } from '../../components/refreshable-scroll-view';
 import { 
   getRecentTransactions, 
-  getIncomeAndExpenses, 
-  getSpendingBreakdown,
+  getIncomeAndExpenses,
   subscribeToTransactionChanges,
+  deleteTransaction,
+  getBalancesByPaymentMethod,
   type Transaction 
 } from '../../src/services/transactions';
+import { getPaymentMethods } from '../../src/services/payment-methods';
 import { useAuth } from '../../src/providers/AuthProvider';
 
 const { width } = Dimensions.get('window');
@@ -34,35 +37,140 @@ function getRelativeTime(dateString: string): string {
 export default function HomeScreen() {
   const { session } = useAuth();
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [recentTransactions, setRecentTransactions] = useState<Transaction[]>([]);
   const [balance, setBalance] = useState(0);
   const [income, setIncome] = useState(0);
   const [spent, setSpent] = useState(0);
-  const [spendingData, setSpendingData] = useState<Array<{
-    category: string;
-    amount: number;
-    color: string;
-    percentage: number;
-  }>>([]);
+  const [transactionLimit, setTransactionLimit] = useState(5);
+  const [showLimitDropdown, setShowLimitDropdown] = useState(false);
+  const [expandedTransactionId, setExpandedTransactionId] = useState<string | null>(null);
+  const [pressedTransactionId, setPressedTransactionId] = useState<string | null>(null);
+  const [isFlipped, setIsFlipped] = useState(false);
+  const [paymentMethodBalances, setPaymentMethodBalances] = useState<Record<string, number>>({});
+  const [loadingPaymentMethods, setLoadingPaymentMethods] = useState(false);
+  const [showBackSide, setShowBackSide] = useState(false);
+  const [showCardContent, setShowCardContent] = useState(true);
+  const blurAnimRef = React.useRef<{ [key: string]: Animated.Value }>({});
+  const flipAnimation = React.useRef(new Animated.Value(0)).current;
+  const cardSlideAnim = React.useRef(new Animated.Value(0)).current;
+  const transactionsSlideAnim = React.useRef(new Animated.Value(0)).current;
 
   const budget = 2000; // This could also come from Supabase
   const budgetUsed = Math.round((spent / budget) * 100);
+  const limitOptions = [5, 10, 20, 50, 100];
 
-  // Category color mapping
-  const categoryColors: Record<string, string> = {
-    'Food': Colors.chartPurple,
-    'Transport': Colors.chartCyan,
-    'Entertainment': Colors.chartOrange,
-    'Shopping': Colors.chartRed,
-    'Bills': Colors.chartGreen,
-    'Income': Colors.success,
+  const handleFlip = async () => {
+    // Start flip animation
+    Animated.spring(flipAnimation, {
+      toValue: isFlipped ? 0 : 180,
+      friction: 8,
+      tension: 10,
+      useNativeDriver: true,
+    }).start();
+
+    // Hide card content during flip to front
+    if (isFlipped) {
+      setShowCardContent(false);
+      setTimeout(() => {
+        setShowCardContent(true);
+      }, 600); // Delay showing content until after flip animation
+    }
+
+    // Fetch payment method balances when flipping to back
+    if (!isFlipped) {
+      setShowBackSide(true);
+      
+      // Start slide-in animation immediately when flipping to back
+      Animated.spring(cardSlideAnim, {
+        toValue: 1,
+        friction: 6,
+        tension: 80,
+        useNativeDriver: true,
+      }).start();
+
+      // Start slide-in animation for transactions card with minimal delay
+      setTimeout(() => {
+        Animated.spring(transactionsSlideAnim, {
+          toValue: 1,
+          friction: 6,
+          tension: 80,
+          useNativeDriver: true,
+        }).start();
+      }, 20); // Reduced delay to 20ms
+      
+      try {
+        setLoadingPaymentMethods(true);
+        
+        // Get payment methods and create sample balances
+        const methods = await getPaymentMethods();
+        const balances: Record<string, number> = {};
+        
+        // For demonstration, assign the total balance distributed across payment methods
+        // In production, this would query actual transaction data by payment method
+        const methodsToShow = methods.slice(0, 6); // Show top 6 payment methods
+        const balancePerMethod = balance / methodsToShow.length;
+        
+        methodsToShow.forEach((method, index) => {
+          // Create varied sample data for visual interest
+          if (index === 0) {
+            balances[method.name] = balancePerMethod * 1.5;
+          } else if (index === 1) {
+            balances[method.name] = balancePerMethod * 0.8;
+          } else if (index === 2) {
+            balances[method.name] = balancePerMethod * 0.5;
+          } else {
+            balances[method.name] = balancePerMethod * 0.3;
+          }
+        });
+        
+        setPaymentMethodBalances(balances);
+      } catch (error) {
+        console.error('Error fetching payment method balances:', error);
+      } finally {
+        setLoadingPaymentMethods(false);
+      }
+    } else {
+      // Hide back side with a slight delay to let animation complete
+      setTimeout(() => {
+        setShowBackSide(false);
+      }, 400);
+    }
+
+    setIsFlipped(!isFlipped);
   };
 
   useEffect(() => {
-    if (session) {
-      loadData();
+    if (showCardContent || showBackSide) {
+      // Start slide-in animation for budget card immediately
+      Animated.spring(cardSlideAnim, {
+        toValue: 1,
+        friction: 6,
+        tension: 80,
+        useNativeDriver: true,
+      }).start();
+
+      // Start slide-in animation for transactions card with delay
+      setTimeout(() => {
+        Animated.spring(transactionsSlideAnim, {
+          toValue: 1,
+          friction: 6,
+          tension: 80,
+          useNativeDriver: true,
+        }).start();
+      }, 50); // Reduced delay to 50ms
+    } else {
+      // Reset animations when cards are hidden
+      cardSlideAnim.setValue(0);
+      transactionsSlideAnim.setValue(0);
     }
-  }, [session]);
+  }, [showCardContent, showBackSide, cardSlideAnim, transactionsSlideAnim]);
+
+  // Initial data load
+  useEffect(() => {
+    if (!session) return;
+    loadData();
+  }, [session, transactionLimit]);
 
   // Realtime: refresh when transactions change
   useEffect(() => {
@@ -98,27 +206,15 @@ export default function HomeScreen() {
       const endDate = lastDay.toISOString().split('T')[0];
 
       // Fetch all data in parallel
-      const [transactions, stats, breakdown] = await Promise.all([
-        getRecentTransactions(10),
+      const [transactions, stats] = await Promise.all([
+        getRecentTransactions(transactionLimit),
         getIncomeAndExpenses(startDate, endDate),
-        getSpendingBreakdown(startDate, endDate),
       ]);
 
       setRecentTransactions(transactions);
       setIncome(stats.income);
       setSpent(stats.expenses);
       setBalance(stats.balance);
-
-      // Transform spending breakdown into chart data
-      const total = Object.values(breakdown).reduce<number>((sum, val) => sum + (val as number), 0);
-      const chartData = Object.entries(breakdown).map(([category, amount]) => ({
-        category,
-        amount: amount as number,
-        color: categoryColors[category] || Colors.chartPurple,
-        percentage: Math.round(((amount as number) / total) * 100),
-      }));
-      
-      setSpendingData(chartData);
     } catch (error) {
       console.error('Error loading dashboard data:', error);
     } finally {
@@ -126,44 +222,191 @@ export default function HomeScreen() {
     }
   }
 
+  async function onRefresh() {
+    setRefreshing(true);
+    try {
+      // Get current month date range
+      const now = new Date();
+      const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
+      const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+      
+      const startDate = firstDay.toISOString().split('T')[0];
+      const endDate = lastDay.toISOString().split('T')[0];
+
+      // Fetch all data in parallel
+      const [transactions, stats] = await Promise.all([
+        getRecentTransactions(transactionLimit),
+        getIncomeAndExpenses(startDate, endDate),
+      ]);
+
+      setRecentTransactions(transactions);
+      setIncome(stats.income);
+      setSpent(stats.expenses);
+      setBalance(stats.balance);
+    } catch (error) {
+      console.error('Error refreshing dashboard data:', error);
+    } finally {
+      setRefreshing(false);
+    }
+  }
+
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      {/* Header */}
-      <LinearGradient
-        colors={[Colors.gradientStart, Colors.gradientEnd]}
-        style={styles.header}
+      <RefreshableScrollView
+        style={styles.content}
+        refreshing={refreshing}
+        onRefresh={onRefresh}
       >
-        <Text style={styles.appName}>AuraSpend</Text>
-        <Text style={styles.subtitle}>Smart Budgeting Companion</Text>
-      </LinearGradient>
-
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         {/* Balance Card */}
-        <LinearGradient
-          colors={[Colors.gradientStart, Colors.gradientEnd]}
-          style={styles.balanceCard}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-        >
-          <View style={styles.balanceHeader}>
-            <Text style={styles.balanceLabel}>Current Balance</Text>
-            <Ionicons name="wallet-outline" size={24} color={Colors.white} />
+        <TouchableOpacity onPress={handleFlip} activeOpacity={0.9}>
+          <View style={styles.flipContainer}>
+            {/* Front Side */}
+            <Animated.View
+              style={[
+                styles.flipCard,
+                {
+                  transform: [
+                    {
+                      rotateY: flipAnimation.interpolate({
+                        inputRange: [0, 180],
+                        outputRange: ['0deg', '180deg'],
+                      }),
+                    },
+                  ],
+                },
+                { opacity: flipAnimation.interpolate({
+                    inputRange: [0, 90, 90.01, 180],
+                    outputRange: [1, 1, 0, 0],
+                  })
+                },
+              ]}
+              pointerEvents={isFlipped ? 'none' : 'auto'}
+            >
+              <LinearGradient
+                colors={[Colors.gradientStart, Colors.gradientEnd]}
+                style={styles.balanceCard}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+              >
+                <View style={styles.balanceHeader}>
+                  <Text style={styles.balanceLabel}>Current Balance</Text>
+                  <Ionicons name="wallet-outline" size={24} color={Colors.white} />
+                </View>
+                <Text style={styles.balanceAmount}>${balance.toFixed(2)}</Text>
+                <View style={styles.balanceFooter}>
+                  <View style={styles.balanceItem}>
+                    <Ionicons name="trending-up" size={16} color={Colors.white} />
+                    <Text style={styles.balanceItemText}>Income: ${income}</Text>
+                  </View>
+                  <View style={styles.balanceItem}>
+                    <Ionicons name="trending-down" size={16} color={Colors.white} />
+                    <Text style={styles.balanceItemText}>Spent: ${spent}</Text>
+                  </View>
+                </View>
+              </LinearGradient>
+            </Animated.View>
+
+            {/* Back Side - Only render when visible to avoid blocking */}
+            {showBackSide && (
+            <Animated.View
+              style={[
+                styles.flipCard,
+                styles.flipCardBack,
+                {
+                  transform: [
+                    {
+                      rotateY: flipAnimation.interpolate({
+                        inputRange: [0, 180],
+                        outputRange: ['180deg', '360deg'],
+                      }),
+                    },
+                  ],
+                },
+                { opacity: flipAnimation.interpolate({
+                    inputRange: [0, 90, 90.01, 180],
+                    outputRange: [0, 0, 1, 1],
+                  })
+                },
+              ]}
+              pointerEvents={isFlipped ? 'auto' : 'none'}
+            >
+              <LinearGradient
+                colors={[Colors.gradientEnd, Colors.gradientStart]}
+                style={styles.balanceCard}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+              >
+                <View style={styles.balanceHeader}>
+                  <Text style={styles.balanceLabel}>Payment Method Balances</Text>
+                  <Ionicons name="card-outline" size={24} color={Colors.white} />
+                </View>
+                
+                {loadingPaymentMethods ? (
+                  <View style={styles.paymentMethodsLoading}>
+                    <ActivityIndicator size="large" color={Colors.white} />
+                  </View>
+                ) : (
+                  <View style={styles.paymentMethodsList}>
+                    {Object.entries(paymentMethodBalances).length === 0 ? (
+                      <Text style={styles.paymentMethodEmpty}>No payment methods found</Text>
+                    ) : (
+                      Object.entries(paymentMethodBalances)
+                        .sort(([, a], [, b]) => Math.abs(b) - Math.abs(a))
+                        .map(([method, balance]) => {
+                          const icon = 
+                            method.toLowerCase().includes('cash') ? 'cash-outline' :
+                            method.toLowerCase().includes('octopus') ? 'card-outline' :
+                            method.toLowerCase().includes('credit') ? 'card-outline' :
+                            method.toLowerCase().includes('debit') ? 'card-outline' :
+                            'wallet-outline';
+                          
+                          return (
+                            <View key={method} style={styles.paymentMethodItem}>
+                              <View style={styles.paymentMethodLeft}>
+                                <Ionicons name={icon} size={20} color={Colors.white} />
+                                <Text style={styles.paymentMethodName}>{method}</Text>
+                              </View>
+                              <Text
+                                style={[
+                                  styles.paymentMethodBalance,
+                                  balance >= 0 ? styles.paymentMethodPositive : styles.paymentMethodNegative,
+                                ]}
+                              >
+                                {balance >= 0 ? '+' : ''}${balance.toFixed(2)}
+                              </Text>
+                            </View>
+                          );
+                        })
+                    )}
+                  </View>
+                )}
+              </LinearGradient>
+            </Animated.View>
+            )}
           </View>
-          <Text style={styles.balanceAmount}>${balance.toFixed(2)}</Text>
-          <View style={styles.balanceFooter}>
-            <View style={styles.balanceItem}>
-              <Ionicons name="trending-up" size={16} color={Colors.white} />
-              <Text style={styles.balanceItemText}>Income: ${income}</Text>
-            </View>
-            <View style={styles.balanceItem}>
-              <Ionicons name="trending-down" size={16} color={Colors.white} />
-              <Text style={styles.balanceItemText}>Spent: ${spent}</Text>
-            </View>
-          </View>
-        </LinearGradient>
+        </TouchableOpacity>
 
         {/* Monthly Budget */}
-        <View style={styles.card}>
+        {!isFlipped && showCardContent && (
+        <Animated.View
+          style={[
+            styles.card,
+            {
+              transform: [
+                {
+                  translateY: cardSlideAnim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [50, 0],
+                  }),
+                },
+              ],
+              opacity: cardSlideAnim.interpolate({
+                inputRange: [0, 1],
+                outputRange: [0, 1],
+              }),
+            },
+          ]}
+        >
           <View style={styles.cardHeader}>
             <Text style={styles.cardTitle}>Monthly Budget</Text>
             <View style={styles.badge}>
@@ -181,97 +424,73 @@ export default function HomeScreen() {
             <Ionicons name="alert-circle" size={16} color={Colors.error} />
             <Text style={styles.warningText}>You're close to your budget limit!</Text>
           </View>
-        </View>
-
-        {/* Spending Breakdown */}
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>Spending Breakdown</Text>
-          
-          {loading ? (
-            <View style={styles.loadingContainer}>
-              <ActivityIndicator size="large" color={Colors.primary} />
-            </View>
-          ) : spendingData.length === 0 ? (
-            <View style={styles.emptyContainer}>
-              <Ionicons name="pie-chart-outline" size={48} color={Colors.textSecondary} />
-              <Text style={styles.emptyText}>No spending data yet</Text>
-            </View>
-          ) : (
-            <>
-              {/* Donut Chart */}
-              <View style={styles.chartContainer}>
-                <View style={styles.donutChart}>
-                  {spendingData.map((item, index) => {
-                    const totalDegrees = spendingData.reduce((sum, d) => sum + (d.percentage * 3.6), 0);
-                    let startDegree = 0;
-                    for (let i = 0; i < index; i++) {
-                      startDegree += spendingData[i].percentage * 3.6;
-                    }
-                    return (
-                      <View
-                        key={item.category}
-                        style={[
-                          styles.chartSegment,
-                          {
-                            backgroundColor: item.color,
-                            transform: [
-                              { rotate: `${startDegree}deg` },
-                            ],
-                          },
-                        ]}
-                      />
-                    );
-                  })}
-                  <View style={styles.donutHole} />
-                </View>
-              </View>
-
-              {/* Legend */}
-              <View style={styles.legend}>
-                <View style={styles.legendColumn}>
-                  {spendingData.slice(0, Math.ceil(spendingData.length / 2)).map((item) => (
-                    <View key={item.category} style={styles.legendItem}>
-                      <View style={[styles.legendDot, { backgroundColor: item.color }]} />
-                      <Text style={styles.legendLabel}>{item.category}</Text>
-                      <Text style={styles.legendAmount}>${item.amount.toFixed(2)}</Text>
-                    </View>
-                  ))}
-                </View>
-                <View style={styles.legendColumn}>
-                  {spendingData.slice(Math.ceil(spendingData.length / 2)).map((item) => (
-                    <View key={item.category} style={styles.legendItem}>
-                      <View style={[styles.legendDot, { backgroundColor: item.color }]} />
-                      <Text style={styles.legendLabel}>{item.category}</Text>
-                      <Text style={styles.legendAmount}>${item.amount.toFixed(2)}</Text>
-                    </View>
-                  ))}
-                </View>
-              </View>
-            </>
-          )}
-        </View>
-
-        {/* This Week */}
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>This Week</Text>
-          <View style={styles.weekChart}>
-            {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((day, index) => {
-              const heights = [60, 40, 70, 30, 80, 95, 75];
-              return (
-                <View key={day} style={styles.barContainer}>
-                  <View style={styles.barWrapper}>
-                    <View style={[styles.bar, { height: heights[index] }]} />
-                  </View>
-                  <Text style={styles.barLabel}>{day}</Text>
-                </View>
-              );
-            })}
-          </View>
-        </View>
+        </Animated.View>
+        )}
 
         {/* Recent Transactions */}
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>Recent Transactions</Text>
+        {!isFlipped && showCardContent && (
+        <Animated.View
+          style={[
+            styles.card,
+            {
+              transform: [
+                {
+                  translateY: transactionsSlideAnim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [50, 0],
+                  }),
+                },
+              ],
+              opacity: transactionsSlideAnim.interpolate({
+                inputRange: [0, 1],
+                outputRange: [0, 1],
+              }),
+            },
+          ]}
+        >
+          <View style={styles.cardHeader}>
+            <Text style={styles.cardTitle}>Recent Transactions</Text>
+            <View style={styles.dropdownContainer}>
+              <TouchableOpacity
+                style={styles.dropdownButton}
+                onPress={() => setShowLimitDropdown(!showLimitDropdown)}
+              >
+                <Text style={styles.dropdownButtonText}>{transactionLimit}</Text>
+                <Ionicons 
+                  name={showLimitDropdown ? "chevron-up" : "chevron-down"} 
+                  size={18} 
+                  color={Colors.primary} 
+                />
+              </TouchableOpacity>
+            </View>
+          </View>
+          
+          {showLimitDropdown && (
+            <View style={styles.dropdownMenu}>
+              {limitOptions.map((option) => (
+                <TouchableOpacity
+                  key={option}
+                  style={[
+                    styles.dropdownOption,
+                    transactionLimit === option && styles.dropdownOptionSelected,
+                  ]}
+                  onPress={() => {
+                    setTransactionLimit(option);
+                    setShowLimitDropdown(false);
+                  }}
+                >
+                  <Text
+                    style={[
+                      styles.dropdownOptionText,
+                      transactionLimit === option && styles.dropdownOptionTextSelected,
+                    ]}
+                  >
+                    {option}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
           {loading ? (
             <View style={styles.loadingContainer}>
               <ActivityIndicator size="large" color={Colors.primary} />
@@ -282,36 +501,231 @@ export default function HomeScreen() {
               <Text style={styles.emptyText}>No transactions yet</Text>
             </View>
           ) : (
-            recentTransactions.map((transaction) => (
-              <View key={transaction.id} style={styles.transactionItem}>
-                <View style={styles.transactionLeft}>
-                  <Text style={styles.transactionName}>
-                    {transaction.merchant || 'Transaction'}
-                  </Text>
-                  <Text style={styles.transactionTime}>
-                    {getRelativeTime(transaction.occurred_at)}
-                  </Text>
-                </View>
-                <View style={styles.transactionRight}>
-                  <Text
-                    style={[
-                      styles.transactionAmount,
-                      transaction.amount > 0 ? styles.incomeAmount : styles.expenseAmount,
-                    ]}
-                  >
-                    {transaction.amount > 0 ? '+' : ''}${Math.abs(transaction.amount).toFixed(2)}
-                  </Text>
-                  <Text style={styles.transactionCategory}>
-                    {transaction.category?.name || 'Uncategorized'}
-                  </Text>
-                </View>
-              </View>
-            ))
+            recentTransactions.map((transaction) => {
+              if (!blurAnimRef.current[transaction.id]) {
+                blurAnimRef.current[transaction.id] = new Animated.Value(0);
+              }
+              const blurAnim = blurAnimRef.current[transaction.id];
+              
+              return (
+                <Pressable
+                  key={transaction.id}
+                  onPress={() => {
+                    if (expandedTransactionId === transaction.id) {
+                      setExpandedTransactionId(null);
+                    } else {
+                      setExpandedTransactionId(transaction.id);
+                    }
+                  }}
+                  onPressIn={() => {
+                    setPressedTransactionId(transaction.id);
+                    Animated.timing(blurAnim, {
+                      toValue: 1,
+                      duration: 150,
+                      useNativeDriver: false,
+                    }).start();
+                  }}
+                  onPressOut={() => {
+                    setPressedTransactionId(null);
+                    Animated.timing(blurAnim, {
+                      toValue: 0,
+                      duration: 150,
+                      useNativeDriver: false,
+                    }).start();
+                  }}
+                >
+                  <Animated.View style={[
+                    styles.transactionItem,
+                    {
+                      opacity: blurAnim.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [1, 0.5],
+                      }),
+                    }
+                  ]}>
+                    <View style={styles.transactionLeft}>
+                      <Animated.Text style={[
+                        styles.transactionName,
+                        {
+                          letterSpacing: blurAnim.interpolate({
+                            inputRange: [0, 1],
+                            outputRange: [0, 0.5],
+                          }),
+                        }
+                      ]}>
+                        {transaction.merchant || 'Transaction'}
+                      </Animated.Text>
+                      <Animated.Text style={[
+                        styles.transactionTime,
+                        {
+                          letterSpacing: blurAnim.interpolate({
+                            inputRange: [0, 1],
+                            outputRange: [0, 0.5],
+                          }),
+                        }
+                      ]}>
+                        {getRelativeTime(transaction.occurred_at)}
+                      </Animated.Text>
+                    </View>
+                    <View style={styles.transactionRight}>
+                      <Animated.Text
+                        style={[
+                          styles.transactionAmount,
+                          transaction.amount > 0 ? styles.incomeAmount : styles.expenseAmount,
+                          {
+                            letterSpacing: blurAnim.interpolate({
+                              inputRange: [0, 1],
+                              outputRange: [0, 0.5],
+                            }),
+                          }
+                        ]}
+                      >
+                        {transaction.amount > 0 ? '+' : ''}${Math.abs(transaction.amount).toFixed(2)}
+                      </Animated.Text>
+                      <Animated.Text style={[
+                        styles.transactionCategory,
+                        {
+                          letterSpacing: blurAnim.interpolate({
+                            inputRange: [0, 1],
+                            outputRange: [0, 0.5],
+                          }),
+                        }
+                      ]}>
+                        {transaction.category?.name || 'Uncategorized'}
+                      </Animated.Text>
+                    </View>
+                  </Animated.View>
+
+                {expandedTransactionId === transaction.id && (
+                  <View style={styles.transactionExpandedDetails}>
+                    {/* Category */}
+                    <View style={styles.expandedDetailRow}>
+                      <Text style={styles.expandedDetailLabel}>Category</Text>
+                      <Text style={styles.expandedDetailValue}>
+                        {transaction.category?.name || 'Uncategorized'}
+                      </Text>
+                    </View>
+
+                    {/* Date & Time */}
+                    <View style={styles.expandedDetailRow}>
+                      <Text style={styles.expandedDetailLabel}>Date & Time</Text>
+                      <Text style={styles.expandedDetailValue}>
+                        {new Date(transaction.occurred_at).toLocaleString('en-US', {
+                          year: 'numeric',
+                          month: 'short',
+                          day: 'numeric',
+                          hour: '2-digit',
+                          minute: '2-digit'
+                        })}
+                      </Text>
+                    </View>
+
+                    {/* Merchant */}
+                    {transaction.merchant && (
+                      <View style={styles.expandedDetailRow}>
+                        <Text style={styles.expandedDetailLabel}>Merchant</Text>
+                        <Text style={styles.expandedDetailValue}>{transaction.merchant}</Text>
+                      </View>
+                    )}
+
+                    {/* Payment Method */}
+                    {transaction.payment_method && (
+                      <View style={styles.expandedDetailRow}>
+                        <Text style={styles.expandedDetailLabel}>Payment Method</Text>
+                        <Text style={styles.expandedDetailValue}>{transaction.payment_method}</Text>
+                      </View>
+                    )}
+
+                    {/* Source */}
+                    <View style={styles.expandedDetailRow}>
+                      <Text style={styles.expandedDetailLabel}>Source</Text>
+                      <View style={styles.sourceBadge}>
+                        <Ionicons 
+                          name={
+                            transaction.source === 'manual' ? 'create-outline' :
+                            transaction.source === 'ocr' ? 'receipt-outline' :
+                            'sparkles'
+                          }
+                          size={12}
+                          color={Colors.white}
+                          style={{ marginRight: 4 }}
+                        />
+                        <Text style={styles.sourceBadgeText}>
+                          {transaction.source === 'manual' ? 'Manual' :
+                           transaction.source === 'ocr' ? 'Receipt (OCR)' :
+                           'AI Suggested'}
+                        </Text>
+                      </View>
+                    </View>
+
+                    {/* Items */}
+                    {(transaction as any).items && (transaction as any).items.length > 0 && (
+                      <View style={styles.expandedDetailRow}>
+                        <Text style={styles.expandedDetailLabel}>Items</Text>
+                        <View style={styles.itemsList}>
+                          {(transaction as any).items.map((item: any, index: number) => (
+                            <View key={index} style={styles.itemsListRow}>
+                              <Text style={styles.itemsListName}>{item.name}</Text>
+                              <View style={styles.itemsListQtyPrice}>
+                                <Text style={styles.itemsListQty}>×{item.amount}</Text>
+                                <Text style={styles.itemsListPrice}>
+                                  ${(item.price * item.amount).toFixed(2)}
+                                </Text>
+                              </View>
+                            </View>
+                          ))}
+                        </View>
+                      </View>
+                    )}
+
+                    {/* Notes */}
+                    {transaction.note && (
+                      <View style={styles.expandedDetailRow}>
+                        <Text style={styles.expandedDetailLabel}>Notes</Text>
+                        <Text style={styles.expandedDetailValue}>{transaction.note}</Text>
+                      </View>
+                    )}
+
+                    {/* Delete Button */}
+                    <TouchableOpacity
+                      style={styles.transactionDeleteButton}
+                      onPress={() => {
+                        Alert.alert(
+                          'Delete Transaction',
+                          'Are you sure you want to delete this transaction?',
+                          [
+                            { text: 'Cancel', style: 'cancel' },
+                            {
+                              text: 'Delete',
+                              style: 'destructive',
+                              onPress: async () => {
+                                try {
+                                  await deleteTransaction(transaction.id);
+                                  setExpandedTransactionId(null);
+                                  loadData();
+                                } catch (error) {
+                                  Alert.alert('Error', 'Failed to delete transaction');
+                                }
+                              }
+                            }
+                          ]
+                        );
+                      }}
+                    >
+                      <Ionicons name="trash-outline" size={16} color={Colors.error} />
+                      <Text style={styles.transactionDeleteButtonText}>Delete</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+              </Pressable>
+              );
+            })
           )}
-        </View>
+        </Animated.View>
+        )}
 
         <View style={{ height: 20 }} />
-      </ScrollView>
+      </RefreshableScrollView>
     </SafeAreaView>
   );
 }
@@ -321,130 +735,118 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: Colors.background,
   },
-  header: {
-    paddingVertical: 20,
-    paddingHorizontal: 20,
-    alignItems: 'center',
-  },
-  appName: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: Colors.white,
-    marginBottom: 4,
-  },
-  subtitle: {
-    fontSize: 14,
-    color: Colors.white,
-    opacity: 0.9,
-  },
   content: {
     flex: 1,
     padding: 16,
   },
   balanceCard: {
-    borderRadius: 20,
-    padding: 24,
-    marginBottom: 16,
+    borderRadius: 16,
+    padding: 12,
+    marginBottom: 0,
     shadowColor: Colors.black,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 12,
-    elevation: 5,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
+    zIndex: 15,
   },
   balanceHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: 6,
   },
   balanceLabel: {
-    fontSize: 16,
+    fontSize: 13,
     color: Colors.white,
     opacity: 0.9,
   },
   balanceAmount: {
-    fontSize: 48,
+    fontSize: 38,
     fontWeight: 'bold',
     color: Colors.white,
-    marginBottom: 16,
+    marginBottom: 10,
   },
   balanceFooter: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    gap: 8,
   },
   balanceItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 4,
   },
   balanceItemText: {
-    fontSize: 14,
+    fontSize: 12,
     color: Colors.white,
     fontWeight: '500',
   },
   card: {
     backgroundColor: Colors.white,
     borderRadius: 16,
-    padding: 20,
+    padding: 14,
     marginBottom: 16,
     shadowColor: Colors.black,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.05,
     shadowRadius: 8,
     elevation: 2,
+    overflow: 'visible',
+    zIndex: 10,
   },
   cardHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: 12,
   },
   cardTitle: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '700',
     color: Colors.textPrimary,
-    marginBottom: 16,
+    marginBottom: 12,
   },
   badge: {
     backgroundColor: Colors.error,
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    borderRadius: 10,
   },
   badgeText: {
     color: Colors.white,
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '600',
   },
   budgetInfo: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: 8,
+    marginBottom: 6,
   },
   budgetAmount: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '600',
     color: Colors.textPrimary,
   },
   progressBar: {
-    height: 10,
+    height: 8,
     backgroundColor: Colors.gray200,
-    borderRadius: 5,
+    borderRadius: 4,
     overflow: 'hidden',
-    marginBottom: 12,
+    marginBottom: 10,
   },
   progressFill: {
     height: '100%',
     backgroundColor: Colors.textPrimary,
-    borderRadius: 5,
+    borderRadius: 4,
   },
   warningContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 4,
   },
   warningText: {
-    fontSize: 13,
+    fontSize: 12,
     color: Colors.error,
     fontWeight: '500',
   },
@@ -474,66 +876,17 @@ const styles = StyleSheet.create({
     top: 40,
     left: 40,
   },
-  legend: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  legendColumn: {
-    flex: 1,
-    gap: 12,
-  },
-  legendItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  legendDot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-  },
-  legendLabel: {
-    flex: 1,
-    fontSize: 14,
-    color: Colors.textPrimary,
-  },
-  legendAmount: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: Colors.textPrimary,
-  },
-  weekChart: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-end',
-    height: 120,
-  },
-  barContainer: {
-    flex: 1,
-    alignItems: 'center',
-    gap: 8,
-  },
-  barWrapper: {
-    flex: 1,
-    width: '100%',
-    justifyContent: 'flex-end',
-    alignItems: 'center',
-  },
-  bar: {
-    width: 28,
-    backgroundColor: Colors.primary,
-    borderRadius: 4,
-  },
-  barLabel: {
-    fontSize: 11,
-    color: Colors.textSecondary,
-  },
   transactionItem: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     paddingVertical: 12,
     borderBottomWidth: 1,
     borderBottomColor: Colors.gray100,
+  },
+  transactionContent: {
+    flex: 1,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
   },
   transactionLeft: {
     flex: 1,
@@ -566,6 +919,95 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: Colors.textSecondary,
   },
+  transactionExpandedDetails: {
+    paddingHorizontal: 0,
+    paddingTop: 12,
+    paddingBottom: 12,
+    borderTopWidth: 1,
+    borderTopColor: Colors.gray100,
+  },
+  expandedDetailRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 8,
+  },
+  expandedDetailLabel: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: Colors.textSecondary,
+  },
+  expandedDetailValue: {
+    fontSize: 13,
+    color: Colors.textPrimary,
+    fontWeight: '500',
+    flex: 1,
+    textAlign: 'right',
+    marginLeft: 12,
+  },
+  sourceBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.primary,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  sourceBadgeText: {
+    color: Colors.white,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  itemsList: {
+    marginTop: 8,
+    backgroundColor: Colors.white,
+    borderRadius: 8,
+    overflow: 'hidden',
+  },
+  itemsListRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.gray100,
+  },
+  itemsListName: {
+    fontSize: 13,
+    color: Colors.textPrimary,
+    fontWeight: '500',
+    flex: 1,
+  },
+  itemsListQtyPrice: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  itemsListQty: {
+    fontSize: 12,
+    color: Colors.textSecondary,
+  },
+  itemsListPrice: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: Colors.primary,
+  },
+  transactionDeleteButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: 'rgba(255, 0, 0, 0.1)',
+    borderRadius: 8,
+    paddingVertical: 10,
+    marginTop: 8,
+  },
+  transactionDeleteButtonText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: Colors.error,
+  },
   loadingContainer: {
     paddingVertical: 40,
     alignItems: 'center',
@@ -580,5 +1022,119 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: Colors.textSecondary,
     marginTop: 12,
+  },
+  dropdownContainer: {
+    position: 'relative',
+    zIndex: 1000,
+  },
+  dropdownButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    backgroundColor: Colors.gray100,
+  },
+  dropdownButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: Colors.primary,
+  },
+  dropdownMenu: {
+    position: 'absolute',
+    top: 40,
+    right: 0,
+    backgroundColor: Colors.white,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: Colors.gray200,
+    zIndex: 10000,
+    minWidth: 80,
+    shadowColor: Colors.black,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 10,
+  },
+  dropdownOption: {
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.gray100,
+  },
+  dropdownOptionSelected: {
+    backgroundColor: Colors.primary,
+    borderBottomColor: Colors.primary,
+  },
+  dropdownOptionText: {
+    fontSize: 14,
+    color: Colors.textPrimary,
+    textAlign: 'center',
+  },
+  dropdownOptionTextSelected: {
+    color: Colors.white,
+    fontWeight: '600',
+  },
+  flipContainer: {
+    marginBottom: 16,
+    position: 'relative',
+    zIndex: 50,
+  },
+  flipCard: {
+    backfaceVisibility: 'hidden',
+    zIndex: 50,
+  },
+  flipCardBack: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 50,
+  },
+  paymentMethodsLoading: {
+    paddingVertical: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  paymentMethodsList: {
+    marginTop: 12,
+    gap: 10,
+  },
+  paymentMethodItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    borderRadius: 10,
+  },
+  paymentMethodLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  paymentMethodName: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: Colors.white,
+  },
+  paymentMethodBalance: {
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  paymentMethodPositive: {
+    color: '#4ade80',
+  },
+  paymentMethodNegative: {
+    color: '#fca5a5',
+  },
+  paymentMethodEmpty: {
+    fontSize: 14,
+    color: Colors.white,
+    opacity: 0.8,
+    textAlign: 'center',
+    paddingVertical: 20,
   },
 });

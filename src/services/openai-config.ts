@@ -5,8 +5,11 @@ const OPENAI_CONFIG_KEY = '@openai_config';
 export interface OpenAIConfig {
   apiUrl: string;
   apiKey: string;
-  primaryModel: string;
+  receiptModel: string;
+  chatModel: string;
   fallbackModel: string;
+  // Backward compatibility
+  primaryModel?: string;
 }
 
 export interface OpenAIModel {
@@ -16,7 +19,7 @@ export interface OpenAIModel {
 }
 
 /**
- * 保存 OpenAI 配置到本地存储
+ * Save OpenAI configuration to local storage
  */
 export async function saveOpenAIConfig(config: OpenAIConfig): Promise<void> {
   try {
@@ -28,13 +31,21 @@ export async function saveOpenAIConfig(config: OpenAIConfig): Promise<void> {
 }
 
 /**
- * 从本地存储获取 OpenAI 配置
+ * Get OpenAI configuration from local storage
  */
 export async function getOpenAIConfig(): Promise<OpenAIConfig | null> {
   try {
     const configStr = await AsyncStorage.getItem(OPENAI_CONFIG_KEY);
     if (!configStr) return null;
-    return JSON.parse(configStr);
+    const config = JSON.parse(configStr);
+    // Migration: handle old configs with primaryModel
+    if (!config.receiptModel && config.primaryModel) {
+      config.receiptModel = config.primaryModel;
+    }
+    if (!config.chatModel) {
+      config.chatModel = config.primaryModel || '';
+    }
+    return config;
   } catch (error) {
     console.error('Failed to get OpenAI config:', error);
     return null;
@@ -42,7 +53,7 @@ export async function getOpenAIConfig(): Promise<OpenAIConfig | null> {
 }
 
 /**
- * 清除 OpenAI 配置
+ * Clear OpenAI configuration
  */
 export async function clearOpenAIConfig(): Promise<void> {
   try {
@@ -54,11 +65,11 @@ export async function clearOpenAIConfig(): Promise<void> {
 }
 
 /**
- * 测试 OpenAI API 连接并获取可用模型列表
+ * Test OpenAI API connection and fetch available models list
  */
 export async function fetchOpenAIModels(apiUrl: string, apiKey: string): Promise<OpenAIModel[]> {
   try {
-    // 确保 URL 格式正确
+    // Ensure URL format is correct
     const baseUrl = apiUrl.endsWith('/') ? apiUrl.slice(0, -1) : apiUrl;
     const modelsEndpoint = `${baseUrl}/models`;
 
@@ -77,7 +88,7 @@ export async function fetchOpenAIModels(apiUrl: string, apiKey: string): Promise
 
     const data = await response.json();
     
-    // OpenAI API 返回格式: { data: [...], object: "list" }
+    // OpenAI API response format: { data: [...], object: "list" }
     if (data.data && Array.isArray(data.data)) {
       return data.data;
     }
@@ -90,7 +101,7 @@ export async function fetchOpenAIModels(apiUrl: string, apiKey: string): Promise
 }
 
 /**
- * 验证 OpenAI API 配置
+ * Validate OpenAI API configuration
  */
 export async function validateOpenAIConfig(apiUrl: string, apiKey: string): Promise<boolean> {
   try {

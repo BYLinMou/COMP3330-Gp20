@@ -80,7 +80,7 @@ export default function AddReceipt() {
       }
     } catch (error) {
       console.error('Failed to load categories:', error);
-      Alert.alert('错误', '无法加载分类列表');
+      Alert.alert('Error', 'Failed to load category list');
     } finally {
       setLoadingCategories(false);
     }
@@ -94,18 +94,18 @@ export default function AddReceipt() {
   };
 
   /**
-   * 选择图片并自动分析
+   * Select image and auto analyze
    */
   const handlePickImage = async () => {
     try {
-      // 请求图片库权限
+      // Request media library permissions
       const result = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (!result.granted) {
-        Alert.alert('权限错误', '需要访问图片库权限');
+        Alert.alert('Permission Error', 'Media library access permission is required');
         return;
       }
 
-      // 打开图片选择器
+      // Open image picker
       const pickerResult = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ImagePicker.MediaTypeOptions.Images,
         allowsEditing: false,
@@ -119,34 +119,34 @@ export default function AddReceipt() {
       setSelectedImage(imageUri);
       console.log('Image selected:', imageUri);
 
-      // 自动分析收据
+      // Auto analyze receipt
       await analyzeReceipt(imageUri);
     } catch (error) {
       console.error('Failed to pick image:', error);
-      Alert.alert('错误', '选择图片失败');
+      Alert.alert('Error', 'Failed to select image');
     }
   };
 
   /**
-   * 分析收据图片（占位函数 - Legacy）
+   * Analyze receipt image (placeholder function - Legacy)
    */
   const analyzeReceipt = async (imagePath: string) => {
     try {
       setIsAnalyzing(true);
       console.log('⚠️ Legacy function called - This feature is moved to add.tsx');
       
-      // 占位实现 - 实际功能已迁移到 app/(tabs)/add.tsx
+      // Placeholder implementation - actual functionality has been migrated to app/(tabs)/add.tsx
       Alert.alert(
-        '功能已迁移',
-        '此页面已废弃，请使用主页面的 Add 功能（Receipt 模式）',
+        'Feature Migrated',
+        'This page is deprecated. Please use the Add feature on the main page (Receipt mode)',
         [
-          { text: '取消', style: 'cancel' },
-          { text: '前往', onPress: () => router.replace('/(tabs)/add') }
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Go', onPress: () => router.replace('/(tabs)/add') }
         ]
       );
     } catch (error) {
       console.error('Legacy function error:', error);
-      Alert.alert('错误', '此功能已迁移，请使用新的添加页面');
+      Alert.alert('Error', 'This feature has been migrated. Please use the new add page');
     } finally {
       setIsAnalyzing(false);
     }
@@ -178,6 +178,7 @@ export default function AddReceipt() {
         occurred_at: occurredAt.toISOString(),
         merchant: merchant.trim(),
         category_id: categoryId || null,
+        payment_method: '现金', // 默认值，可根据实际需求调整
         source: selectedImage ? 'ocr' : 'manual',
         note: note.trim() || null,
       });

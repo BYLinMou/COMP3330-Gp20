@@ -1,16 +1,31 @@
-import React, { useState } from 'react';
-import { View, Text, ScrollView, StyleSheet, TouchableOpacity, Dimensions } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, Dimensions, ActivityIndicator } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../constants/theme';
+import { RefreshableScrollView } from '../../components/refreshable-scroll-view';
+import { 
+  getSpendingBreakdown,
+  type Transaction 
+} from '../../src/services/transactions';
+import { useAuth } from '../../src/providers/AuthProvider';
 
 const { width } = Dimensions.get('window');
 
-type TabType = 'trends' | 'compare' | 'merchants' | 'search';
+type TabType = 'trends' | 'compare' | 'merchants' | 'search' | 'breakdown' | 'weekly';
 
 export default function ReportsScreen() {
+  const { session } = useAuth();
   const [activeTab, setActiveTab] = useState<TabType>('trends');
+  const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [spendingData, setSpendingData] = useState<Array<{
+    category: string;
+    amount: number;
+    color: string;
+    percentage: number;
+  }>>([]);
 
   const totalIncome = 2500.00;
   const totalSpent = 192.50;
@@ -21,18 +36,85 @@ export default function ReportsScreen() {
 
   const maxValue = Math.max(...actualSpending, ...budgetTarget);
 
+  // Category color mapping
+  const categoryColors: Record<string, string> = {
+    'Food': Colors.chartPurple,
+    'Transport': Colors.chartCyan,
+    'Entertainment': Colors.chartOrange,
+    'Shopping': Colors.chartRed,
+    'Bills': Colors.chartGreen,
+    'Income': Colors.success,
+  };
+
+  useEffect(() => {
+    if (session) {
+      loadSpendingData();
+    }
+  }, [session]);
+
+  async function loadSpendingData() {
+    try {
+      setLoading(true);
+      const now = new Date();
+      const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
+      const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+      
+      const startDate = firstDay.toISOString().split('T')[0];
+      const endDate = lastDay.toISOString().split('T')[0];
+
+      const breakdown = await getSpendingBreakdown(startDate, endDate);
+      
+      const total = Object.values(breakdown).reduce<number>((sum, val) => sum + (val as number), 0);
+      const chartData = Object.entries(breakdown).map(([category, amount]) => ({
+        category,
+        amount: amount as number,
+        color: categoryColors[category] || Colors.chartPurple,
+        percentage: Math.round(((amount as number) / total) * 100),
+      }));
+      
+      setSpendingData(chartData);
+    } catch (error) {
+      console.error('Error loading spending data:', error);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function onRefresh() {
+    setRefreshing(true);
+    try {
+      const now = new Date();
+      const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
+      const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+      
+      const startDate = firstDay.toISOString().split('T')[0];
+      const endDate = lastDay.toISOString().split('T')[0];
+
+      const breakdown = await getSpendingBreakdown(startDate, endDate);
+      
+      const total = Object.values(breakdown).reduce<number>((sum, val) => sum + (val as number), 0);
+      const chartData = Object.entries(breakdown).map(([category, amount]) => ({
+        category,
+        amount: amount as number,
+        color: categoryColors[category] || Colors.chartPurple,
+        percentage: Math.round(((amount as number) / total) * 100),
+      }));
+      
+      setSpendingData(chartData);
+    } catch (error) {
+      console.error('Error refreshing spending data:', error);
+    } finally {
+      setRefreshing(false);
+    }
+  }
+
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      {/* Header */}
-      <LinearGradient
-        colors={[Colors.gradientStart, Colors.gradientEnd]}
-        style={styles.header}
+      <RefreshableScrollView 
+        style={styles.content}
+        refreshing={refreshing}
+        onRefresh={onRefresh}
       >
-        <Text style={styles.appName}>AuraSpend</Text>
-        <Text style={styles.subtitle}>Smart Budgeting Companion</Text>
-      </LinearGradient>
-
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         {/* Income and Spent Cards */}
         <View style={styles.summaryCards}>
           <View style={[styles.summaryCard, styles.incomeCard]}>
@@ -63,27 +145,27 @@ export default function ReportsScreen() {
             </Text>
           </TouchableOpacity>
           <TouchableOpacity
+            style={[styles.tab, activeTab === 'breakdown' && styles.tabActive]}
+            onPress={() => setActiveTab('breakdown')}
+          >
+            <Text style={[styles.tabText, activeTab === 'breakdown' && styles.tabTextActive]}>
+              Breakdown
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.tab, activeTab === 'weekly' && styles.tabActive]}
+            onPress={() => setActiveTab('weekly')}
+          >
+            <Text style={[styles.tabText, activeTab === 'weekly' && styles.tabTextActive]}>
+              Weekly
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
             style={[styles.tab, activeTab === 'compare' && styles.tabActive]}
             onPress={() => setActiveTab('compare')}
           >
             <Text style={[styles.tabText, activeTab === 'compare' && styles.tabTextActive]}>
               Compare
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.tab, activeTab === 'merchants' && styles.tabActive]}
-            onPress={() => setActiveTab('merchants')}
-          >
-            <Text style={[styles.tabText, activeTab === 'merchants' && styles.tabTextActive]}>
-              Merchants
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.tab, activeTab === 'search' && styles.tabActive]}
-            onPress={() => setActiveTab('search')}
-          >
-            <Text style={[styles.tabText, activeTab === 'search' && styles.tabTextActive]}>
-              Search
             </Text>
           </TouchableOpacity>
         </View>
@@ -175,24 +257,98 @@ export default function ReportsScreen() {
           </View>
         )}
 
-        {/* Merchants Tab */}
-        {activeTab === 'merchants' && (
+        {/* Breakdown Tab */}
+        {activeTab === 'breakdown' && (
           <View style={styles.card}>
-            <Text style={styles.cardTitle}>Top Merchants</Text>
-            <Text style={styles.cardSubtitle}>Coming soon...</Text>
+            <Text style={styles.cardTitle}>Spending Breakdown</Text>
+            
+            {loading ? (
+              <View style={styles.loadingContainer}>
+                <ActivityIndicator size="large" color={Colors.primary} />
+              </View>
+            ) : spendingData.length === 0 ? (
+              <View style={styles.emptyContainer}>
+                <Ionicons name="pie-chart-outline" size={48} color={Colors.textSecondary} />
+                <Text style={styles.emptyText}>No spending data yet</Text>
+              </View>
+            ) : (
+              <>
+                {/* Donut Chart */}
+                <View style={styles.chartContainerBreakdown}>
+                  <View style={styles.donutChart}>
+                    {spendingData.map((item, index) => {
+                      const totalDegrees = spendingData.reduce((sum, d) => sum + (d.percentage * 3.6), 0);
+                      let startDegree = 0;
+                      for (let i = 0; i < index; i++) {
+                        startDegree += spendingData[i].percentage * 3.6;
+                      }
+                      return (
+                        <View
+                          key={item.category}
+                          style={[
+                            styles.chartSegment,
+                            {
+                              backgroundColor: item.color,
+                              transform: [
+                                { rotate: `${startDegree}deg` },
+                              ],
+                            },
+                          ]}
+                        />
+                      );
+                    })}
+                    <View style={styles.donutHole} />
+                  </View>
+                </View>
+
+                {/* Legend */}
+                <View style={styles.breakdownLegend}>
+                  <View style={styles.legendColumn}>
+                    {spendingData.slice(0, Math.ceil(spendingData.length / 2)).map((item) => (
+                      <View key={item.category} style={styles.legendItem}>
+                        <View style={[styles.legendDot, { backgroundColor: item.color }]} />
+                        <Text style={styles.legendLabel}>{item.category}</Text>
+                        <Text style={styles.legendAmount}>${item.amount.toFixed(2)}</Text>
+                      </View>
+                    ))}
+                  </View>
+                  <View style={styles.legendColumn}>
+                    {spendingData.slice(Math.ceil(spendingData.length / 2)).map((item) => (
+                      <View key={item.category} style={styles.legendItem}>
+                        <View style={[styles.legendDot, { backgroundColor: item.color }]} />
+                        <Text style={styles.legendLabel}>{item.category}</Text>
+                        <Text style={styles.legendAmount}>${item.amount.toFixed(2)}</Text>
+                      </View>
+                    ))}
+                  </View>
+                </View>
+              </>
+            )}
           </View>
         )}
 
-        {/* Search Tab */}
-        {activeTab === 'search' && (
+        {/* Weekly Tab */}
+        {activeTab === 'weekly' && (
           <View style={styles.card}>
-            <Text style={styles.cardTitle}>Search Transactions</Text>
-            <Text style={styles.cardSubtitle}>Coming soon...</Text>
+            <Text style={styles.cardTitle}>This Week</Text>
+            <View style={styles.weekChart}>
+              {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((day, index) => {
+                const heights = [60, 40, 70, 30, 80, 95, 75];
+                return (
+                  <View key={day} style={styles.barContainer}>
+                    <View style={styles.barWrapper}>
+                      <View style={[styles.bar, { height: heights[index] }]} />
+                    </View>
+                    <Text style={styles.barLabel}>{day}</Text>
+                  </View>
+                );
+              })}
+            </View>
           </View>
         )}
 
         <View style={{ height: 20 }} />
-      </ScrollView>
+      </RefreshableScrollView>
     </SafeAreaView>
   );
 }
@@ -201,22 +357,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: Colors.background,
-  },
-  header: {
-    paddingVertical: 20,
-    paddingHorizontal: 20,
-    alignItems: 'center',
-  },
-  appName: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: Colors.white,
-    marginBottom: 4,
-  },
-  subtitle: {
-    fontSize: 14,
-    color: Colors.white,
-    opacity: 0.9,
   },
   content: {
     flex: 1,
@@ -401,5 +541,93 @@ const styles = StyleSheet.create({
   legendText: {
     fontSize: 13,
     color: Colors.textSecondary,
+  },
+  // Breakdown tab styles
+  chartContainerBreakdown: {
+    alignItems: 'center',
+    marginBottom: 24,
+  },
+  donutChart: {
+    width: 180,
+    height: 180,
+    borderRadius: 90,
+    position: 'relative',
+    overflow: 'hidden',
+  },
+  chartSegment: {
+    position: 'absolute',
+    width: '100%',
+    height: '100%',
+    borderRadius: 90,
+  },
+  donutHole: {
+    position: 'absolute',
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: Colors.white,
+    top: 40,
+    left: 40,
+  },
+  breakdownLegend: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  legendColumn: {
+    flex: 1,
+    gap: 12,
+  },
+  legendLabel: {
+    flex: 1,
+    fontSize: 14,
+    color: Colors.textPrimary,
+  },
+  legendAmount: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: Colors.textPrimary,
+  },
+  // Weekly tab styles
+  weekChart: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-end',
+    height: 120,
+  },
+  barContainer: {
+    flex: 1,
+    alignItems: 'center',
+    gap: 8,
+  },
+  barWrapper: {
+    flex: 1,
+    width: '100%',
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+  },
+  bar: {
+    width: 28,
+    backgroundColor: Colors.primary,
+    borderRadius: 4,
+  },
+  barLabel: {
+    fontSize: 11,
+    color: Colors.textSecondary,
+  },
+  // Empty and loading states
+  loadingContainer: {
+    paddingVertical: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emptyContainer: {
+    paddingVertical: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emptyText: {
+    fontSize: 15,
+    color: Colors.textSecondary,
+    marginTop: 12,
   },
 });

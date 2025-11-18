@@ -1,17 +1,22 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, ScrollView, StyleSheet, TouchableOpacity, TextInput, Alert, ActivityIndicator, Modal, Platform } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, TouchableOpacity, TextInput as RNTextInput, Alert, ActivityIndicator, Modal, Platform, Animated } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import Swipeable from 'react-native-gesture-handler/Swipeable';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import * as ImagePicker from 'expo-image-picker';
 import { Colors } from '../../constants/theme';
+import { RefreshableScrollView } from '../../components/refreshable-scroll-view';
 import { addTransaction } from '../../src/services/transactions';
 import { getCategories, addCategory, subscribeToCategoryChanges, type Category } from '../../src/services/categories';
+import { getCurrencies, type Currency } from '../../src/services/currencies';
+import { getPaymentMethods, type PaymentMethod } from '../../src/services/payment-methods';
 import { processReceiptImage, type ReceiptData, type ProcessingProgress } from '../../src/services/receipt-processor';
 import { useAuth } from '../../src/providers/AuthProvider';
+import { TextInput as GestureTextInput } from 'react-native-gesture-handler';
 
-type InputMethod = 'manual' | 'receipt' | 'voice';
+type InputMethod = 'manual' | 'receipt';
 
 interface ReceiptItem {
   name: string;
@@ -28,41 +33,55 @@ export default function AddScreen() {
   const [merchant, setMerchant] = useState('');
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [notes, setNotes] = useState('');
+  const [selectedCurrency, setSelectedCurrency] = useState('');
+  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState('');
+  const [userOverrodeAmount, setUserOverrodeAmount] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   
   // Categories and loading states
   const [categories, setCategories] = useState<Category[]>([]);
+  const [paymentMethods, setPaymentMethods] = useState<PaymentMethod[]>([]);
+  const [currencyOptions, setCurrencyOptions] = useState<Currency[]>([]);
   const [loadingCategories, setLoadingCategories] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [processingReceipt, setProcessingReceipt] = useState(false);
   
   // Modal states
   const [showCategoryModal, setShowCategoryModal] = useState(false);
+  const [showCurrencyModal, setShowCurrencyModal] = useState(false);
+  const [showPaymentMethodModal, setShowPaymentMethodModal] = useState(false);
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [showTimePicker, setShowTimePicker] = useState(false);
   const [showNewCategoryModal, setShowNewCategoryModal] = useState(false);
   const [suggestedCategory, setSuggestedCategory] = useState<string>('');
   const [pendingReceiptData, setPendingReceiptData] = useState<ReceiptData | null>(null);
   
+  // Editing state for item inputs (string values while typing)
+  const [itemEditingState, setItemEditingState] = useState<{
+    [key: string]: { amountStr?: string; priceStr?: string };
+  }>({});
 
-
-  const quickAddItems = [
-    { label: '$4.5 Coffee', amount: 4.5 },
-    { label: '$12 Lunch', amount: 12 },
-    { label: '$35 Gas', amount: 35 },
-    { label: '$45 Groceries', amount: 45 },
-  ];
-
-  // Auto-calculate amount from itemlist
+  // Auto-calculate amount from itemlist (only if user hasn't manually overridden)
   useEffect(() => {
-    if (itemlist.length > 0) {
+    if (itemlist.length > 0 && !userOverrodeAmount) {
       const total = itemlist.reduce((sum, item) => sum + (item.price * item.amount), 0);
       setAmount(total.toFixed(2));
+    }
+  }, [itemlist, userOverrodeAmount]);
+
+  // Reset override flag when itemlist becomes empty
+  useEffect(() => {
+    if (itemlist.length === 0) {
+      setUserOverrodeAmount(false);
+      setItemEditingState({});
     }
   }, [itemlist]);
 
   // Load categories on mount and subscribe to realtime changes
   useEffect(() => {
     loadCategories();
+    loadCurrencies();
+    loadPaymentMethods();
   }, []);
 
   // Subscribe to category changes for realtime updates
@@ -112,6 +131,26 @@ export default function AddScreen() {
       console.error('Failed to load categories:', error);
     } finally {
       setLoadingCategories(false);
+    }
+  };
+
+  const loadCurrencies = async () => {
+    try {
+      const data = await getCurrencies();
+      setCurrencyOptions(data);
+      console.log('[Add] Loaded currencies:', data);
+    } catch (error) {
+      console.error('Failed to load currencies:', error);
+    }
+  };
+
+  const loadPaymentMethods = async () => {
+    try {
+      const data = await getPaymentMethods();
+      setPaymentMethods(data);
+      console.log('[Add] Loaded payment methods:', data);
+    } catch (error) {
+      console.error('Failed to load payment methods:', error);
     }
   };
 
@@ -224,8 +263,8 @@ export default function AddScreen() {
   };
 
   /**
-   * 处理收据图片：调用独立的收据处理器
-   * @param imageUri - 图片的本地 URI
+   * Process receipt image: call the independent receipt processor
+   * @param imageUri - Local URI of the image
    */
   const handleReceiptImageProcessing = async (imageUri: string) => {
     try {
@@ -240,9 +279,21 @@ export default function AddScreen() {
       console.log('[Add Screen] isNewCategory:', receiptData.isNewCategory);
       console.log('[Add Screen] category:', receiptData.category);
 
-      // 自动填充表单
+      // Auto-fill the form
       setMerchant(receiptData.merchant);
       setAmount(receiptData.amount.toString());
+      
+      // Set currency (if detected by AI)
+      if (receiptData.currency) {
+        setSelectedCurrency(receiptData.currency);
+        console.log('[Add Screen] Currency detected:', receiptData.currency);
+      }
+      
+      // Set payment method (if detected by AI)
+      if (receiptData.payment_method) {
+        setSelectedPaymentMethod(receiptData.payment_method);
+        console.log('[Add Screen] Payment method detected:', receiptData.payment_method);
+      }
       
       // 如果是字符串数组（旧格式），转换为 ReceiptItem 数组
       if (receiptData.items && Array.isArray(receiptData.items) && receiptData.items.length > 0) {
@@ -345,8 +396,6 @@ export default function AddScreen() {
       let source: 'manual' | 'ocr' | 'ai' = 'manual';
       if (inputMethod === 'receipt') {
         source = 'ocr';
-      } else if (inputMethod === 'voice') {
-        source = 'ai';
       }
 
       // 构建商家名称
@@ -366,6 +415,7 @@ export default function AddScreen() {
         category_id: categoryId || null,
         source,
         note: notes.trim(),
+        payment_method: selectedPaymentMethod || null,
         items: itemlist.length > 0 ? itemlist : undefined, // 只有在有项目时才保存
       };
 
@@ -383,6 +433,8 @@ export default function AddScreen() {
             setMerchant('');
             setNotes('');
             setSelectedDate(new Date());
+            setSelectedPaymentMethod('');
+            setUserOverrodeAmount(false);
           },
         },
       ]);
@@ -444,40 +496,26 @@ export default function AddScreen() {
     }
   };
 
-  const handleQuickAdd = async (item: { label: string; amount: number }) => {
-    try {
-      setSubmitting(true);
-
-      await addTransaction({
-        amount: -item.amount, // Negative for expense
-        occurred_at: new Date().toISOString(),
-        merchant: item.label,
-        category_id: categoryId || null,
-        source: 'manual',
-        note: 'Quick Add: ' + item.label,
-      });
-
-      Alert.alert('Success', `${item.label} added successfully!`);
-    } catch (error) {
-      console.error('Failed to add quick transaction:', error);
-      Alert.alert('Error', 'Failed to add transaction. Please try again.');
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
-      {/* Header */}
-      <LinearGradient
-        colors={[Colors.gradientStart, Colors.gradientEnd]}
-        style={styles.header}
+      <RefreshableScrollView 
+        style={styles.content}
+        refreshing={refreshing}
+        onRefresh={async () => {
+          setRefreshing(true);
+          try {
+            await Promise.all([
+              loadCategories(),
+              loadCurrencies(),
+              loadPaymentMethods(),
+            ]);
+          } catch (error) {
+            console.error('Error refreshing add screen data:', error);
+          } finally {
+            setRefreshing(false);
+          }
+        }}
       >
-        <Text style={styles.appName}>AuraSpend</Text>
-        <Text style={styles.subtitle}>Smart Budgeting Companion</Text>
-      </LinearGradient>
-
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         {/* Debug Info - Remove in production */}
         {__DEV__ && (
           <View style={styles.debugInfo}>
@@ -492,9 +530,6 @@ export default function AddScreen() {
           </View>
         )}
 
-        {/* Add Transaction Title */}
-        <Text style={styles.pageTitle}>Add Transaction</Text>
-
         {/* Input Method Selector */}
         <View style={styles.methodSelector}>
           <TouchableOpacity
@@ -504,19 +539,21 @@ export default function AddScreen() {
             ]}
             onPress={() => setInputMethod('manual')}
           >
-            <Ionicons
-              name="cash-outline"
-              size={32}
-              color={inputMethod === 'manual' ? Colors.white : Colors.textSecondary}
-            />
-            <Text
-              style={[
-                styles.methodLabel,
-                inputMethod === 'manual' && styles.methodLabelActive,
-              ]}
-            >
-              Manual
-            </Text>
+            <View style={styles.methodButtonContent}>
+              <Ionicons
+                name="cash-outline"
+                size={20}
+                color={inputMethod === 'manual' ? Colors.white : Colors.textSecondary}
+              />
+              <Text
+                style={[
+                  styles.methodLabel,
+                  inputMethod === 'manual' && styles.methodLabelActive,
+                ]}
+              >
+                Manual
+              </Text>
+            </View>
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -526,51 +563,31 @@ export default function AddScreen() {
             ]}
             onPress={() => setInputMethod('receipt')}
           >
-            <Ionicons
-              name="camera-outline"
-              size={32}
-              color={inputMethod === 'receipt' ? Colors.white : Colors.textSecondary}
-            />
-            <Text
-              style={[
-                styles.methodLabel,
-                inputMethod === 'receipt' && styles.methodLabelActive,
-              ]}
-            >
-              Receipt
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[
-              styles.methodButton,
-              inputMethod === 'voice' && styles.methodButtonActive,
-            ]}
-            onPress={() => setInputMethod('voice')}
-          >
-            <Ionicons
-              name="mic-outline"
-              size={32}
-              color={inputMethod === 'voice' ? Colors.white : Colors.textSecondary}
-            />
-            <Text
-              style={[
-                styles.methodLabel,
-                inputMethod === 'voice' && styles.methodLabelActive,
-              ]}
-            >
-              Voice
-            </Text>
+            <View style={styles.methodButtonContent}>
+              <Ionicons
+                name="camera-outline"
+                size={20}
+                color={inputMethod === 'receipt' ? Colors.white : Colors.textSecondary}
+              />
+              <Text
+                style={[
+                  styles.methodLabel,
+                  inputMethod === 'receipt' && styles.methodLabelActive,
+                ]}
+              >
+                Receipt
+              </Text>
+            </View>
           </TouchableOpacity>
         </View>
 
         {/* Receipt Upload Area */}
         {inputMethod === 'receipt' && (
           <View style={styles.uploadArea}>
-            <View style={styles.uploadIcon}>
-              <Ionicons name="cloud-upload-outline" size={48} color={Colors.primary} />
+            <View style={styles.uploadHeaderRow}>
+              <Ionicons name="cloud-upload-outline" size={28} color={Colors.primary} />
+              <Text style={styles.uploadText}>Upload a receipt or take a photo</Text>
             </View>
-            <Text style={styles.uploadText}>Upload a receipt or take a photo</Text>
             <View style={styles.uploadButtonRow}>
               <TouchableOpacity 
                 style={[styles.uploadButton, processingReceipt && styles.uploadButtonDisabled]} 
@@ -589,12 +606,6 @@ export default function AddScreen() {
                 <Text style={styles.uploadButtonText}>Take Photo</Text>
               </TouchableOpacity>
             </View>
-            {processingReceipt && (
-              <View style={styles.processingIndicator}>
-                <ActivityIndicator color={Colors.primary} size="small" />
-                <Text style={styles.processingText}>Processing receipt...</Text>
-              </View>
-            )}
           </View>
         )}
 
@@ -602,23 +613,37 @@ export default function AddScreen() {
         <View style={styles.card}>
           <Text style={styles.sectionTitle}>Transaction Details</Text>
 
-          {/* Amount */}
+          {/* Amount with Inline Currency Selector */}
           <View style={styles.inputGroup}>
             <Text style={styles.inputLabel}>
               Amount <Text style={styles.required}>*</Text>
             </Text>
             <View style={styles.amountInput}>
-              <Text style={styles.currencySymbol}>$</Text>
-              <TextInput
+              <TouchableOpacity
+                style={styles.currencySelector}
+                onPress={() => setShowCurrencyModal(true)}
+              >
+                <Text style={styles.currencySymbol}>
+                  {selectedCurrency ? currencyOptions.find(c => c.code === selectedCurrency)?.symbol : '$'}
+                </Text>
+                <Ionicons name="chevron-down" size={16} color={Colors.textSecondary} />
+              </TouchableOpacity>
+              <RNTextInput
                 style={styles.amountField}
                 placeholder="0.00"
                 keyboardType="decimal-pad"
                 value={amount}
-                onChangeText={setAmount}
-                editable={itemlist.length === 0} // Read-only if items present
+                onChangeText={(text) => {
+                  setAmount(text);
+                  if (itemlist.length > 0) {
+                    setUserOverrodeAmount(true);
+                  }
+                }}
               />
-              <Ionicons name="chevron-down" size={20} color={Colors.textSecondary} />
             </View>
+            <Text style={styles.currencySubtext}>
+              Amount is automatically calculated from item list. If you enter a value manually, it will override the auto-calculation (useful for discounts or custom totals).
+            </Text>
           </View>
 
           {/* Date & Time (occurred_at) */}
@@ -723,62 +748,150 @@ export default function AddScreen() {
 
           {/* Item List */}
           <View style={styles.inputGroup}>
-            <Text style={styles.inputLabel}>Item List</Text>
+            <Text style={styles.inputLabel}>Item List (Optional)</Text>
+            {itemlist.length > 0 && (
+              <Text style={styles.itemListSubtext}>
+                Swipe left on any item to delete it.
+              </Text>
+            )}
+            {/* {itemlist.length === 0 && (
+              <View style={styles.emptyItemListPlaceholder}>
+                <Ionicons name="list-outline" size={32} color={Colors.gray300} />
+                <Text style={styles.emptyItemListText}>No items added yet</Text>
+                <Text style={styles.emptyItemListSubtext}>Add items to break down your transaction</Text>
+              </View>
+            )} */}
             {itemlist.length > 0 && (
               <View style={styles.itemListHeader}>
                 <Text style={[styles.itemHeaderText, { flex: 1 }]}>Item</Text>
-                <Text style={[styles.itemHeaderText, { width: 60 }]}>Qty</Text>
-                <Text style={[styles.itemHeaderText, { width: 70 }]}>Price</Text>
+                <Text style={[styles.itemHeaderText, { width: 30 }]}>Qty</Text>
+                <Text style={[styles.itemHeaderText, { width: 40 }]}>Price</Text>
                 <Text style={[styles.itemHeaderText, { width: 50 }]}>Total</Text>
               </View>
             )}
-            {itemlist.map((item, index) => (
-              <View key={index} style={styles.itemRow}>
-                <TextInput
-                  style={[styles.itemInput, { flex: 1 }]}
-                  placeholder="Item name"
-                  value={item.name}
-                  onChangeText={(text) => {
-                    const newList = [...itemlist];
-                    newList[index].name = text;
-                    setItemlist(newList);
-                  }}
-                />
-                <TextInput
-                  style={styles.itemInputSmall}
-                  placeholder="Qty"
-                  keyboardType="decimal-pad"
-                  value={item.amount.toString()}
-                  onChangeText={(text) => {
-                    const newList = [...itemlist];
-                    newList[index].amount = parseFloat(text) || 1;
-                    setItemlist(newList);
-                  }}
-                />
-                <TextInput
-                  style={styles.itemInputSmall}
-                  placeholder="Price"
-                  keyboardType="decimal-pad"
-                  value={item.price.toFixed(2)}
-                  onChangeText={(text) => {
-                    const newList = [...itemlist];
-                    newList[index].price = parseFloat(text) || 0;
-                    setItemlist(newList);
-                  }}
-                />
-                <View style={[styles.itemInputSmall, styles.itemTotal]}>
-                  <Text style={styles.itemTotalText}>
-                    ${(item.amount * item.price).toFixed(2)}
-                  </Text>
-                </View>
-                <TouchableOpacity
-                  style={styles.itemDeleteButton}
-                  onPress={() => setItemlist(itemlist.filter((_, i) => i !== index))}
+            {itemlist.map((item, index) => {
+              const renderRightActions = (progress: Animated.AnimatedInterpolation<number>, dragX: Animated.AnimatedInterpolation<number>) => {
+                const trans = dragX.interpolate({
+                  inputRange: [-80, 0],
+                  outputRange: [0, 80],
+                  extrapolate: 'clamp',
+                });
+                return (
+                  <Animated.View
+                    style={[
+                      styles.swipeDeleteContainer,
+                      { transform: [{ translateX: trans }] },
+                    ]}
+                  >
+                    <TouchableOpacity
+                      style={styles.swipeDeleteButton}
+                      onPress={() => setItemlist(itemlist.filter((_, i) => i !== index))}
+                    >
+                      <Ionicons name="trash-outline" size={16} color={Colors.white} />
+                      <Text style={styles.swipeDeleteText}>Delete</Text>
+                    </TouchableOpacity>
+                  </Animated.View>
+                );
+              };
+
+              return (
+                <Swipeable
+                  key={index}
+                  renderRightActions={renderRightActions}
+                  overshootRight={false}
+                  friction={2}
+                  enableTrackpadTwoFingerGesture
                 >
-                  <Ionicons name="trash-outline" size={18} color={Colors.error} />
-                </TouchableOpacity>
-              </View>
-            ))}
+                  <View style={styles.itemRow}>
+                    <GestureTextInput
+                      style={styles.itemInput}
+                      placeholder="Item name"
+                      value={item.name}
+                      onChangeText={(text) => {
+                        const newList = [...itemlist];
+                        newList[index].name = text;
+                        setItemlist(newList);
+                      }}
+                      scrollEnabled={false}
+                      numberOfLines={1}
+                    />
+                    <GestureTextInput
+                      style={[styles.itemInputSmall, { width: 25 }]}
+                      placeholder="Qty"
+                      keyboardType="decimal-pad"
+                      scrollEnabled={false}
+                      numberOfLines={1}
+                      value={itemEditingState[index]?.amountStr ?? item.amount.toString()}
+                      onChangeText={(text) => {
+                        // Store raw input string while typing
+                        setItemEditingState(prev => ({
+                          ...prev,
+                          [index]: { ...prev[index], amountStr: text }
+                        }));
+                      }}
+                      onBlur={() => {
+                        // Parse and validate on blur
+                        const rawValue = itemEditingState[index]?.amountStr;
+                        if (rawValue !== undefined) {
+                          const normalized = rawValue.replace(/,/g, '.');
+                          const parsed = parseFloat(normalized);
+                          const newList = [...itemlist];
+                          newList[index].amount = !isNaN(parsed) && parsed > 0 ? parsed : 1;
+                          setItemlist(newList);
+                          // Clear editing state for this field
+                          setItemEditingState(prev => {
+                            const updated = { ...prev };
+                            if (updated[index]) {
+                              delete updated[index].amountStr;
+                            }
+                            return updated;
+                          });
+                        }
+                      }}
+                    />
+                    <GestureTextInput
+                      style={[styles.itemInputSmall, { width: 35 }]}
+                      placeholder="Price"
+                      keyboardType="decimal-pad"
+                      scrollEnabled={false}
+                      numberOfLines={1}
+                      value={itemEditingState[index]?.priceStr ?? item.price.toString()}
+                      onChangeText={(text) => {
+                        // Store raw input string while typing
+                        setItemEditingState(prev => ({
+                          ...prev,
+                          [index]: { ...prev[index], priceStr: text }
+                        }));
+                      }}
+                      onBlur={() => {
+                        // Parse and validate on blur
+                        const rawValue = itemEditingState[index]?.priceStr;
+                        if (rawValue !== undefined) {
+                          const normalized = rawValue.replace(/,/g, '.');
+                          const parsed = parseFloat(normalized);
+                          const newList = [...itemlist];
+                          newList[index].price = !isNaN(parsed) && parsed >= 0 ? parsed : 0;
+                          setItemlist(newList);
+                          // Clear editing state for this field
+                          setItemEditingState(prev => {
+                            const updated = { ...prev };
+                            if (updated[index]) {
+                              delete updated[index].priceStr;
+                            }
+                            return updated;
+                          });
+                        }
+                      }}
+                    />
+                    <View style={[styles.itemTotal, { width: 50 }]}>
+                      <Text style={styles.itemTotalText} numberOfLines={1} adjustsFontSizeToFit>
+                        {selectedCurrency ? currencyOptions.find(c => c.code === selectedCurrency)?.symbol : '$'}{(item.amount * item.price).toFixed(2)}
+                      </Text>
+                    </View>
+                  </View>
+                </Swipeable>
+              );
+            })}
             <TouchableOpacity
               style={styles.addItemButton}
               onPress={() => setItemlist([...itemlist, { name: '', amount: 1, price: 0 }])}
@@ -788,10 +901,45 @@ export default function AddScreen() {
             </TouchableOpacity>
           </View>
 
+          {/* Payment Method */}
+          <View style={styles.inputGroup}>
+            <Text style={styles.inputLabel}>Payment Method (Optional)</Text>
+            <TouchableOpacity 
+              style={styles.selectInput}
+              onPress={() => setShowPaymentMethodModal(true)}
+            >
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
+                {selectedPaymentMethod ? (
+                  <>
+                    {(() => {
+                      const selectedMethod = paymentMethods.find(m => m.name === selectedPaymentMethod);
+                      return selectedMethod?.icon ? (
+                        <Ionicons name={selectedMethod.icon as any} size={18} color={Colors.primary} />
+                      ) : (
+                        <Ionicons name="card-outline" size={18} color={Colors.primary} />
+                      );
+                    })()}
+                    <Text style={styles.selectValue}>
+                      {selectedPaymentMethod}
+                    </Text>
+                  </>
+                ) : (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                    <Ionicons name="wallet-outline" size={18} color={Colors.gray300} />
+                    <Text style={styles.selectPlaceholder}>
+                      Select payment method
+                    </Text>
+                  </View>
+                )}
+              </View>
+              <Ionicons name="chevron-down" size={20} color={Colors.textSecondary} />
+            </TouchableOpacity>
+          </View>
+
           {/* Merchant */}
           <View style={styles.inputGroup}>
             <Text style={styles.inputLabel}>Merchant (Optional)</Text>
-            <TextInput
+            <RNTextInput
               style={styles.textInput}
               placeholder="Enter merchant name"
               value={merchant}
@@ -802,7 +950,7 @@ export default function AddScreen() {
           {/* Notes */}
           <View style={styles.inputGroup}>
             <Text style={styles.inputLabel}>Notes (Optional)</Text>
-            <TextInput
+            <RNTextInput
               style={[styles.textInput, styles.notesInput]}
               placeholder="Add any additional notes..."
               multiline
@@ -811,6 +959,34 @@ export default function AddScreen() {
               onChangeText={setNotes}
             />
           </View>
+
+          {/* Transaction Summary */}
+          {/* <View style={styles.summaryCard}>
+            <View style={styles.summaryRow}>
+              <Text style={styles.summaryLabel}>Total Amount:</Text>
+              <Text style={styles.summaryAmount}>
+                {selectedCurrency ? currencyOptions.find(c => c.code === selectedCurrency)?.symbol : '$'}{amount || '0.00'}
+              </Text>
+            </View>
+            {itemlist.length > 0 && (
+              <View style={styles.summaryRow}>
+                <Text style={styles.summaryLabel}>Items:</Text>
+                <Text style={styles.summaryValue}>{itemlist.length}</Text>
+              </View>
+            )}
+            {categoryId && (
+              <View style={styles.summaryRow}>
+                <Text style={styles.summaryLabel}>Category:</Text>
+                <Text style={styles.summaryValue}>{categories.find(c => c.id === categoryId)?.name}</Text>
+              </View>
+            )}
+            {selectedPaymentMethod && (
+              <View style={styles.summaryRow}>
+                <Text style={styles.summaryLabel}>Payment:</Text>
+                <Text style={styles.summaryValue}>{selectedPaymentMethod}</Text>
+              </View>
+            )}
+          </View> */}
 
           {/* Save Button */}
           <TouchableOpacity 
@@ -829,25 +1005,8 @@ export default function AddScreen() {
           )}
         </View>
 
-        {/* Quick Add */}
-        <View style={styles.card}>
-          <Text style={styles.sectionTitle}>Quick Add</Text>
-          <View style={styles.quickAddGrid}>
-            {quickAddItems.map((item, index) => (
-              <TouchableOpacity 
-                key={index} 
-                style={styles.quickAddButton}
-                onPress={() => handleQuickAdd(item)}
-                disabled={submitting || !session}
-              >
-                <Text style={styles.quickAddText}>{item.label}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        </View>
-
         <View style={{ height: 20 }} />
-      </ScrollView>
+      </RefreshableScrollView>
 
       {/* Category Selection Modal */}
       <Modal
@@ -927,6 +1086,126 @@ export default function AddScreen() {
         </View>
       </Modal>
 
+      {/* Currency Selection Modal */}
+      <Modal
+        visible={showCurrencyModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowCurrencyModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Select Currency</Text>
+              <TouchableOpacity onPress={() => setShowCurrencyModal(false)}>
+                <Ionicons name="close" size={24} color={Colors.textPrimary} />
+              </TouchableOpacity>
+            </View>
+            
+            <ScrollView style={styles.modalList}>
+              {currencyOptions.map((currency) => (
+                <TouchableOpacity
+                  key={currency.code}
+                  style={[
+                    styles.modalItem,
+                    selectedCurrency === currency.code && styles.modalItemSelected
+                  ]}
+                  onPress={() => {
+                    setSelectedCurrency(currency.code);
+                    setShowCurrencyModal(false);
+                  }}
+                >
+                  <View>
+                    <Text style={[
+                      styles.modalItemText,
+                      selectedCurrency === currency.code && styles.modalItemTextSelected
+                    ]}>
+                      {currency.symbol} {currency.code}
+                    </Text>
+                    <Text style={styles.currencySubtext}>{currency.name}</Text>
+                  </View>
+                  {selectedCurrency === currency.code && (
+                    <Ionicons name="checkmark" size={20} color={Colors.primary} />
+                  )}
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Payment Method Selection Modal */}
+      <Modal
+        visible={showPaymentMethodModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowPaymentMethodModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Select Payment Method</Text>
+              <TouchableOpacity onPress={() => setShowPaymentMethodModal(false)}>
+                <Ionicons name="close" size={24} color={Colors.textPrimary} />
+              </TouchableOpacity>
+            </View>
+            
+            <ScrollView style={styles.modalList}>
+              {/* No Payment Method Option */}
+              <TouchableOpacity
+                style={[
+                  styles.modalItem,
+                  !selectedPaymentMethod && styles.modalItemSelected
+                ]}
+                onPress={() => {
+                  setSelectedPaymentMethod('');
+                  setShowPaymentMethodModal(false);
+                }}
+              >
+                <Text style={[
+                  styles.modalItemText,
+                  !selectedPaymentMethod && styles.modalItemTextSelected
+                ]}>
+                  Not specified
+                </Text>
+                {!selectedPaymentMethod && (
+                  <Ionicons name="checkmark" size={20} color={Colors.primary} />
+                )}
+              </TouchableOpacity>
+
+              {paymentMethods.map((method) => (
+                <TouchableOpacity
+                  key={method.id}
+                  style={[
+                    styles.modalItem,
+                    selectedPaymentMethod === method.name && styles.modalItemSelected
+                  ]}
+                  onPress={() => {
+                    setSelectedPaymentMethod(method.name);
+                    setShowPaymentMethodModal(false);
+                  }}
+                >
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                    {method.icon && (
+                      <Ionicons name={method.icon as any} size={20} color={Colors.textSecondary} />
+                    )}
+                    <Text style={[
+                      styles.modalItemText,
+                      selectedPaymentMethod === method.name && styles.modalItemTextSelected
+                    ]}>
+                      {method.name}
+                    </Text>
+                  </View>
+                  {selectedPaymentMethod === method.name && (
+                    <Ionicons name="checkmark" size={20} color={Colors.primary} />
+                  )}
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
       {/* New Category Confirmation Modal */}
       <Modal
         visible={showNewCategoryModal}
@@ -936,11 +1215,10 @@ export default function AddScreen() {
       >
         <View style={styles.modalOverlay}>
           <View style={styles.confirmModalContent}>
-            <View style={styles.confirmModalIcon}>
-              <Ionicons name="sparkles" size={48} color={Colors.primary} />
+            <View style={styles.confirmModalTitleRow}>
+              <Ionicons name="sparkles" size={26} color={Colors.primary} />
+              <Text style={styles.confirmModalTitle}>🤖 AI Suggestion</Text>
             </View>
-            
-            <Text style={styles.confirmModalTitle}>🤖 AI Suggestion</Text>
             
             <Text style={styles.confirmModalMessage}>
               AI suggests creating a new category:{'\n'}
@@ -967,6 +1245,19 @@ export default function AddScreen() {
         </View>
       </Modal>
 
+      {/* Processing Receipt Modal */}
+      <Modal
+        visible={processingReceipt}
+        transparent
+        animationType="fade"
+      >
+        <View style={styles.processingOverlay}>
+          <View style={styles.processingModalContent}>
+            <ActivityIndicator size="large" color={Colors.primary} />
+            <Text style={styles.processingModalText}>Processing receipt...</Text>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -975,22 +1266,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: Colors.background,
-  },
-  header: {
-    paddingVertical: 20,
-    paddingHorizontal: 20,
-    alignItems: 'center',
-  },
-  appName: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: Colors.white,
-    marginBottom: 4,
-  },
-  subtitle: {
-    fontSize: 14,
-    color: Colors.white,
-    opacity: 0.9,
   },
   content: {
     flex: 1,
@@ -1011,12 +1286,17 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: Colors.white,
     borderRadius: 12,
-    padding: 20,
+    paddingVertical: 14,
+    paddingHorizontal: 10,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
     borderWidth: 2,
     borderColor: Colors.gray200,
+  },
+  methodButtonContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   methodButtonActive: {
     backgroundColor: Colors.textPrimary,
@@ -1026,6 +1306,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     color: Colors.textSecondary,
+    marginLeft: 6,
   },
   methodLabelActive: {
     color: Colors.white,
@@ -1033,38 +1314,48 @@ const styles = StyleSheet.create({
   uploadArea: {
     backgroundColor: Colors.white,
     borderRadius: 16,
-    padding: 32,
-    marginBottom: 24,
-    alignItems: 'center',
+    padding: 16,
+    marginBottom: 16,
     borderWidth: 2,
     borderColor: Colors.primary,
     borderStyle: 'dashed',
   },
+  uploadHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    marginBottom: 12,
+  },
   uploadIcon: {
-    marginBottom: 16,
+    marginBottom: 12,
   },
   uploadText: {
-    fontSize: 15,
+    fontSize: 13,
     color: Colors.textSecondary,
-    marginBottom: 20,
+    marginBottom: 0,
     textAlign: 'center',
+    lineHeight: 18,
   },
   uploadButtonRow: {
     flexDirection: 'row',
-    gap: 12,
+    gap: 8,
+    flexWrap: 'wrap',
+    justifyContent: 'center',
   },
   uploadButton: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
+    gap: 6,
     backgroundColor: Colors.white,
     borderWidth: 1,
     borderColor: Colors.textPrimary,
-    paddingHorizontal: 16,
+    paddingHorizontal: 12,
     paddingVertical: 10,
     borderRadius: 8,
+    minWidth: 120,
   },
   uploadButtonDisabled: {
     opacity: 0.5,
@@ -1073,21 +1364,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     color: Colors.textPrimary,
-  },
-  processingIndicator: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginTop: 16,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    backgroundColor: Colors.gray100,
-    borderRadius: 8,
-  },
-  processingText: {
-    fontSize: 14,
-    color: Colors.textSecondary,
-    fontWeight: '500',
   },
   card: {
     backgroundColor: Colors.white,
@@ -1123,19 +1399,28 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: Colors.gray100,
     borderRadius: 8,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  currencySelector: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 6,
+    paddingVertical: 4,
+    marginRight: 4,
+    borderRadius: 6,
+    gap: 4,
   },
   currencySymbol: {
     fontSize: 16,
     fontWeight: '600',
     color: Colors.textSecondary,
-    marginRight: 8,
   },
   amountField: {
     flex: 1,
-    fontSize: 16,
+    fontSize: 15,
     color: Colors.textPrimary,
+    paddingHorizontal: 4,
   },
   textInput: {
     backgroundColor: Colors.gray100,
@@ -1204,25 +1489,6 @@ const styles = StyleSheet.create({
     color: Colors.error,
     textAlign: 'center',
     marginTop: 8,
-  },
-  quickAddGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
-  },
-  quickAddButton: {
-    flex: 1,
-    minWidth: '45%',
-    backgroundColor: Colors.gray100,
-    borderRadius: 8,
-    paddingVertical: 16,
-    paddingHorizontal: 12,
-    alignItems: 'center',
-  },
-  quickAddText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: Colors.textPrimary,
   },
   modalOverlay: {
     flex: 1,
@@ -1348,37 +1614,74 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     marginBottom: 12,
-    gap: 8,
   },
   itemInput: {
+    flex: 1,
     backgroundColor: Colors.gray100,
     borderRadius: 6,
     paddingHorizontal: 10,
     paddingVertical: 8,
-    fontSize: 14,
+    fontSize: 13,
     color: Colors.textPrimary,
+    marginRight: 8,
   },
   itemInputSmall: {
     backgroundColor: Colors.gray100,
     borderRadius: 6,
-    paddingHorizontal: 8,
+    paddingHorizontal: 6,
     paddingVertical: 8,
-    fontSize: 14,
+    fontSize: 12,
     color: Colors.textPrimary,
     textAlign: 'center',
+    marginRight: 8,
   },
   itemTotal: {
     backgroundColor: Colors.gray50,
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 8,
     justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 8,
   },
   itemTotalText: {
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: '600',
     color: Colors.primary,
   },
-  itemDeleteButton: {
+  swipeHint: {
+    fontSize: 11,
+    color: Colors.textSecondary,
+    fontStyle: 'italic',
+    marginTop: 4,
+    marginBottom: 8,
+  },
+  itemListSubtext: {
+    fontSize: 13,
+    color: Colors.textSecondary,
+    marginBottom: 12,
+    lineHeight: 18,
+  },
+  swipeDeleteContainer: {
+    justifyContent: 'center',
+    alignItems: 'flex-end',
+    marginBottom: 12,
+  },
+  swipeDeleteButton: {
+    backgroundColor: Colors.error,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    width: 80,
+    height: '100%',
+    borderRadius: 6,
     paddingHorizontal: 8,
-    paddingVertical: 8,
+    gap: 4,
+  },
+  swipeDeleteText: {
+    color: Colors.white,
+    fontSize: 12,
+    fontWeight: '600',
   },
   addItemButton: {
     flexDirection: 'row',
@@ -1404,14 +1707,17 @@ const styles = StyleSheet.create({
     maxWidth: 400,
     alignSelf: 'center',
   },
-  confirmModalIcon: {
-    marginBottom: 20,
+  confirmModalTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    marginBottom: 12,
   },
   confirmModalTitle: {
-    fontSize: 22,
+    fontSize: 20,
     fontWeight: '700',
     color: Colors.textPrimary,
-    marginBottom: 16,
     textAlign: 'center',
   },
   confirmModalMessage: {
@@ -1455,5 +1761,83 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: Colors.textPrimary,
+  },
+  currencySubtext: {
+    fontSize: 13,
+    color: Colors.textSecondary,
+    marginTop: 2,
+    marginLeft: 4,
+  },
+  processingOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  processingModalContent: {
+    backgroundColor: Colors.white,
+    borderRadius: 16,
+    padding: 24,
+    alignItems: 'center',
+    gap: 12,
+  },
+  processingModalText: {
+    fontSize: 16,
+    color: Colors.textPrimary,
+    fontWeight: '500',
+  },
+  emptyItemListPlaceholder: {
+    backgroundColor: Colors.gray50,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: Colors.gray200,
+    borderStyle: 'dashed',
+    paddingVertical: 24,
+    paddingHorizontal: 16,
+    alignItems: 'center',
+    marginBottom: 12,
+    gap: 8,
+  },
+  emptyItemListText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: Colors.textSecondary,
+    textAlign: 'center',
+  },
+  emptyItemListSubtext: {
+    fontSize: 13,
+    color: Colors.gray400,
+    textAlign: 'center',
+  },
+  summaryCard: {
+    backgroundColor: Colors.gray50,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: Colors.gray200,
+    paddingVertical: 16,
+    paddingHorizontal: 16,
+    marginBottom: 20,
+    gap: 12,
+  },
+  summaryRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 4,
+  },
+  summaryLabel: {
+    fontSize: 14,
+    color: Colors.textSecondary,
+    fontWeight: '500',
+  },
+  summaryAmount: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: Colors.primary,
+  },
+  summaryValue: {
+    fontSize: 14,
+    color: Colors.textPrimary,
+    fontWeight: '600',
   },
 });

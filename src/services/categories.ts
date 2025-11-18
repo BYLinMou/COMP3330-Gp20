@@ -145,8 +145,15 @@ export async function subscribeToCategoryChanges(
 
   console.log('[Categories Service] Setting up realtime subscription for user:', user.id);
 
+  // Use a unique channel name to avoid conflicts
+  const channelName = `categories:${user.id}:${Date.now()}`;
+  
   const channel = supabase
-    .channel(`public:categories:${user.id}`)
+    .channel(channelName, {
+      config: {
+        broadcast: { self: true },
+      },
+    })
     .on(
       'postgres_changes',
       {
@@ -169,18 +176,26 @@ export async function subscribeToCategoryChanges(
       }
     )
     .subscribe((status, err) => {
-      console.log('[Categories Service] Subscription status:', status, err);
+      console.log('[Categories Service] Subscription status:', {
+        status,
+        error: err,
+        channelName,
+      });
+      if (status === 'SUBSCRIBED') {
+        console.log('[Categories Service] Successfully subscribed to channel:', channelName);
+      } else if (status === 'CHANNEL_ERROR') {
+        console.error('[Categories Service] Channel error:', err);
+      }
     });
 
-  console.log('[Categories Service] Channel created and subscribed');
+  console.log('[Categories Service] Channel created:', channelName);
 
   return async () => {
-    console.log('[Categories Service] Unsubscribing from realtime');
+    console.log('[Categories Service] Unsubscribing from realtime:', channelName);
     try {
-      await channel.unsubscribe();
+      await supabase.removeChannel(channel);
     } catch (e) {
-      // @ts-ignore
-      supabase.removeChannel?.(channel);
+      console.error('[Categories Service] Error during unsubscribe:', e);
     }
   };
 }

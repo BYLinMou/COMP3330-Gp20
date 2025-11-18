@@ -48,4 +48,26 @@ Example: to test auth flows locally
 - For database work, put client helpers in `src/services/` and avoid scattering raw Supabase calls across many components.
 - Add tests or small demo screens rather than changing `Gate` logic unless you fully replicate its behavior — it's central to navigation.
 
+## Tool calling architecture (for AI-chat features)
+
+**Do NOT hardcode tool implementations into UI components or monolithic files.** Instead:
+
+1. **Group related tools by domain** in `src/services/`. Combine tools for the same feature area in one service file:
+   - E.g., all transaction-related tools (get recent transactions, query transactions, transaction stats, etc.) → `src/services/transactions.ts`
+   - E.g., all receipt-related tools → `src/services/receipt.ts`
+   - E.g., all analytics/reporting tools → `src/services/reports.ts`
+2. **Define clear interfaces** for tool inputs and outputs in these service files.
+3. **Implement the business logic** completely in the service file — handle data fetching, validation, error handling, and formatting. Export separate functions for each tool.
+4. **Register tool definitions and handlers** in `src/services/chat-tools.ts`:
+   - Add tool definitions (name, description, parameters schema) to the tools array, grouped by domain.
+   - Import the service functions and write handlers that call them.
+   - Format responses appropriately for the AI chat interface.
+
+**Example pattern:**
+- Domain: transaction-related tools
+- Service file: `src/services/transactions.ts` (exports `getRecentTransactions(...)`, `queryTransactions(...)`, `getTransactionStats(...)`, etc.)
+- Registration: In `chat-tools.ts`, add multiple tool definitions for transactions, then import the transaction functions and write handlers for each.
+
+This keeps `chat-tools.ts` clean (acts as an orchestrator), reduces file clutter, and makes related service logic testable and reusable across the app.
+
 If anything here is unclear or you want more detail in any section (scripts, env setup, routing examples, or a small example PR), tell me which part to expand and I will iterate.

@@ -35,6 +35,7 @@ export const Colors = {
   gray50: '#F9FAFB',
   gray100: '#F3F4F6',
   gray200: '#E5E7EB',
+  gray250: '#DCE1E8',
   gray300: '#D1D5DB',
   gray400: '#9CA3AF',
   gray500: '#6B7280',
@@ -55,6 +56,43 @@ export const Colors = {
   // Tab bar
   tabIconDefault: '#9CA3AF',
   tabIconSelected: '#8B5CF6',
+};
+
+/**
+ * Gradient definitions for common use cases
+ * Use with LinearGradient component: <LinearGradient colors={Gradients.primary.colors} start={Gradients.primary.start} end={Gradients.primary.end} />
+ */
+export const Gradients = {
+  primary: {
+    colors: ['rgba(124, 58, 237, 0.8)', 'rgba(59, 130, 246, 0.8)'] as const,
+    start: { x: 0, y: 0 },
+    end: { x: 1, y: 1 },
+  },
+  primaryReverse: {
+    colors: [Colors.gradientEnd, Colors.gradientStart] as const,
+    start: { x: 0, y: 0 },
+    end: { x: 1, y: 1 },
+  },
+  primaryVertical: {
+    colors: [Colors.gradientStart, Colors.gradientEnd] as const,
+    start: { x: 0, y: 0 },
+    end: { x: 0, y: 1 },
+  },
+  userMessage: {
+    colors: ['rgba(59, 130, 246, 0.8)', 'rgba(139, 92, 246, 0.8)'] as const,
+    start: { x: 0, y: 0 },
+    end: { x: 1, y: 1 },
+  },
+  success: {
+    colors: ['#10B981', '#059669'] as const,
+    start: { x: 0, y: 0 },
+    end: { x: 1, y: 1 },
+  },
+  error: {
+    colors: ['#EF4444', '#DC2626'] as const,
+    start: { x: 0, y: 0 },
+    end: { x: 1, y: 1 },
+  },
 };
 
 export const Fonts = Platform.select({
