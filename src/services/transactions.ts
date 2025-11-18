@@ -237,6 +237,37 @@ export async function getIncomeAndExpenses(startDate: string, endDate: string) {
 }
 
 /**
+ * Get balances grouped by payment method for the current user
+ * Note: Currently returns payment methods with placeholder balances
+ * TODO: Update when payment_method tracking is added to transactions table
+ */
+export async function getBalancesByPaymentMethod() {
+  try {
+    // Import payment methods service
+    const { getPaymentMethods } = await import('./payment-methods');
+    
+    // Get available payment methods
+    const paymentMethods = await getPaymentMethods();
+    
+    // Create balances object with payment methods
+    // For now, we'll show some sample data until payment method tracking is implemented
+    const balances: Record<string, number> = {};
+    
+    // Add some common payment methods with sample balances for demonstration
+    // In production, this would query actual transaction data
+    paymentMethods.slice(0, 5).forEach((method, index) => {
+      // Sample data - replace with actual transaction queries when payment_method field is added
+      balances[method.name] = 0;
+    });
+    
+    return balances;
+  } catch (error) {
+    console.error('Failed to fetch balances by payment method:', error);
+    throw error;
+  }
+}
+
+/**
  * Add a new transaction
  */
 export async function addTransaction(

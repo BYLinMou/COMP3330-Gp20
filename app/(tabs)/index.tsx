@@ -10,8 +10,10 @@ import {
   getIncomeAndExpenses,
   subscribeToTransactionChanges,
   deleteTransaction,
+  getBalancesByPaymentMethod,
   type Transaction 
 } from '../../src/services/transactions';
+import { getPaymentMethods } from '../../src/services/payment-methods';
 import { useAuth } from '../../src/providers/AuthProvider';
 import FloatingChatButton from '../../components/floating-chat-button';
 
@@ -45,16 +47,130 @@ export default function HomeScreen() {
   const [showLimitDropdown, setShowLimitDropdown] = useState(false);
   const [expandedTransactionId, setExpandedTransactionId] = useState<string | null>(null);
   const [pressedTransactionId, setPressedTransactionId] = useState<string | null>(null);
+  const [isFlipped, setIsFlipped] = useState(false);
+  const [paymentMethodBalances, setPaymentMethodBalances] = useState<Record<string, number>>({});
+  const [loadingPaymentMethods, setLoadingPaymentMethods] = useState(false);
+  const [showBackSide, setShowBackSide] = useState(false);
+  const [showCardContent, setShowCardContent] = useState(true);
   const blurAnimRef = React.useRef<{ [key: string]: Animated.Value }>({});
+  const flipAnimation = React.useRef(new Animated.Value(0)).current;
+  const cardSlideAnim = React.useRef(new Animated.Value(0)).current;
+  const transactionsSlideAnim = React.useRef(new Animated.Value(0)).current;
 
   const budget = 2000; // This could also come from Supabase
   const budgetUsed = Math.round((spent / budget) * 100);
   const limitOptions = [5, 10, 20, 50, 100];
 
-  useEffect(() => {
-    if (session) {
-      loadData();
+  const handleFlip = async () => {
+    // Start flip animation
+    Animated.spring(flipAnimation, {
+      toValue: isFlipped ? 0 : 180,
+      friction: 8,
+      tension: 10,
+      useNativeDriver: true,
+    }).start();
+
+    // Hide card content during flip to front
+    if (isFlipped) {
+      setShowCardContent(false);
+      setTimeout(() => {
+        setShowCardContent(true);
+      }, 600); // Delay showing content until after flip animation
     }
+
+    // Fetch payment method balances when flipping to back
+    if (!isFlipped) {
+      setShowBackSide(true);
+      
+      // Start slide-in animation immediately when flipping to back
+      Animated.spring(cardSlideAnim, {
+        toValue: 1,
+        friction: 6,
+        tension: 80,
+        useNativeDriver: true,
+      }).start();
+
+      // Start slide-in animation for transactions card with minimal delay
+      setTimeout(() => {
+        Animated.spring(transactionsSlideAnim, {
+          toValue: 1,
+          friction: 6,
+          tension: 80,
+          useNativeDriver: true,
+        }).start();
+      }, 20); // Reduced delay to 20ms
+      
+      try {
+        setLoadingPaymentMethods(true);
+        
+        // Get payment methods and create sample balances
+        const methods = await getPaymentMethods();
+        const balances: Record<string, number> = {};
+        
+        // For demonstration, assign the total balance distributed across payment methods
+        // In production, this would query actual transaction data by payment method
+        const methodsToShow = methods.slice(0, 6); // Show top 6 payment methods
+        const balancePerMethod = balance / methodsToShow.length;
+        
+        methodsToShow.forEach((method, index) => {
+          // Create varied sample data for visual interest
+          if (index === 0) {
+            balances[method.name] = balancePerMethod * 1.5;
+          } else if (index === 1) {
+            balances[method.name] = balancePerMethod * 0.8;
+          } else if (index === 2) {
+            balances[method.name] = balancePerMethod * 0.5;
+          } else {
+            balances[method.name] = balancePerMethod * 0.3;
+          }
+        });
+        
+        setPaymentMethodBalances(balances);
+      } catch (error) {
+        console.error('Error fetching payment method balances:', error);
+      } finally {
+        setLoadingPaymentMethods(false);
+      }
+    } else {
+      // Hide back side with a slight delay to let animation complete
+      setTimeout(() => {
+        setShowBackSide(false);
+      }, 400);
+    }
+
+    setIsFlipped(!isFlipped);
+  };
+
+  useEffect(() => {
+    if (showCardContent || showBackSide) {
+      // Start slide-in animation for budget card immediately
+      Animated.spring(cardSlideAnim, {
+        toValue: 1,
+        friction: 6,
+        tension: 80,
+        useNativeDriver: true,
+      }).start();
+
+      // Start slide-in animation for transactions card with delay
+      setTimeout(() => {
+        Animated.spring(transactionsSlideAnim, {
+          toValue: 1,
+          friction: 6,
+          tension: 80,
+          useNativeDriver: true,
+        }).start();
+      }, 50); // Reduced delay to 50ms
+    } else {
+      // Reset animations when cards are hidden
+      cardSlideAnim.setValue(0);
+      transactionsSlideAnim.setValue(0);
+    }
+  }, [showCardContent, showBackSide, cardSlideAnim, transactionsSlideAnim]);
+
+  // Initial data load
+  useEffect(() => {
+    if (!session) return;
+    loadData();
   }, [session, transactionLimit]);
 
   // Realtime: refresh when transactions change
@@ -143,31 +259,155 @@ export default function HomeScreen() {
         onRefresh={onRefresh}
       >
         {/* Balance Card */}
-        <LinearGradient
-          colors={[Colors.gradientStart, Colors.gradientEnd]}
-          style={styles.balanceCard}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-        >
-          <View style={styles.balanceHeader}>
-            <Text style={styles.balanceLabel}>Current Balance</Text>
-            <Ionicons name="wallet-outline" size={24} color={Colors.white} />
+        <TouchableOpacity onPress={handleFlip} activeOpacity={0.9}>
+          <View style={styles.flipContainer}>
+            {/* Front Side */}
+            <Animated.View
+              style={[
+                styles.flipCard,
+                {
+                  transform: [
+                    {
+                      rotateY: flipAnimation.interpolate({
+                        inputRange: [0, 180],
+                        outputRange: ['0deg', '180deg'],
+                      }),
+                    },
+                  ],
+                },
+                { opacity: flipAnimation.interpolate({
+                    inputRange: [0, 90, 90.01, 180],
+                    outputRange: [1, 1, 0, 0],
+                  })
+                },
+              ]}
+              pointerEvents={isFlipped ? 'none' : 'auto'}
+            >
+              <LinearGradient
+                colors={[Colors.gradientStart, Colors.gradientEnd]}
+                style={styles.balanceCard}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+              >
+                <View style={styles.balanceHeader}>
+                  <Text style={styles.balanceLabel}>Current Balance</Text>
+                  <Ionicons name="wallet-outline" size={24} color={Colors.white} />
+                </View>
+                <Text style={styles.balanceAmount}>${balance.toFixed(2)}</Text>
+                <View style={styles.balanceFooter}>
+                  <View style={styles.balanceItem}>
+                    <Ionicons name="trending-up" size={16} color={Colors.white} />
+                    <Text style={styles.balanceItemText}>Income: ${income}</Text>
+                  </View>
+                  <View style={styles.balanceItem}>
+                    <Ionicons name="trending-down" size={16} color={Colors.white} />
+                    <Text style={styles.balanceItemText}>Spent: ${spent}</Text>
+                  </View>
+                </View>
+              </LinearGradient>
+            </Animated.View>
+
+            {/* Back Side - Only render when visible to avoid blocking */}
+            {showBackSide && (
+            <Animated.View
+              style={[
+                styles.flipCard,
+                styles.flipCardBack,
+                {
+                  transform: [
+                    {
+                      rotateY: flipAnimation.interpolate({
+                        inputRange: [0, 180],
+                        outputRange: ['180deg', '360deg'],
+                      }),
+                    },
+                  ],
+                },
+                { opacity: flipAnimation.interpolate({
+                    inputRange: [0, 90, 90.01, 180],
+                    outputRange: [0, 0, 1, 1],
+                  })
+                },
+              ]}
+              pointerEvents={isFlipped ? 'auto' : 'none'}
+            >
+              <LinearGradient
+                colors={[Colors.gradientEnd, Colors.gradientStart]}
+                style={styles.balanceCard}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+              >
+                <View style={styles.balanceHeader}>
+                  <Text style={styles.balanceLabel}>Payment Method Balances</Text>
+                  <Ionicons name="card-outline" size={24} color={Colors.white} />
+                </View>
+                
+                {loadingPaymentMethods ? (
+                  <View style={styles.paymentMethodsLoading}>
+                    <ActivityIndicator size="large" color={Colors.white} />
+                  </View>
+                ) : (
+                  <View style={styles.paymentMethodsList}>
+                    {Object.entries(paymentMethodBalances).length === 0 ? (
+                      <Text style={styles.paymentMethodEmpty}>No payment methods found</Text>
+                    ) : (
+                      Object.entries(paymentMethodBalances)
+                        .sort(([, a], [, b]) => Math.abs(b) - Math.abs(a))
+                        .map(([method, balance]) => {
+                          const icon = 
+                            method.toLowerCase().includes('cash') ? 'cash-outline' :
+                            method.toLowerCase().includes('octopus') ? 'card-outline' :
+                            method.toLowerCase().includes('credit') ? 'card-outline' :
+                            method.toLowerCase().includes('debit') ? 'card-outline' :
+                            'wallet-outline';
+                          
+                          return (
+                            <View key={method} style={styles.paymentMethodItem}>
+                              <View style={styles.paymentMethodLeft}>
+                                <Ionicons name={icon} size={20} color={Colors.white} />
+                                <Text style={styles.paymentMethodName}>{method}</Text>
+                              </View>
+                              <Text
+                                style={[
+                                  styles.paymentMethodBalance,
+                                  balance >= 0 ? styles.paymentMethodPositive : styles.paymentMethodNegative,
+                                ]}
+                              >
+                                {balance >= 0 ? '+' : ''}${balance.toFixed(2)}
+                              </Text>
+                            </View>
+                          );
+                        })
+                    )}
+                  </View>
+                )}
+              </LinearGradient>
+            </Animated.View>
+            )}
           </View>
-          <Text style={styles.balanceAmount}>${balance.toFixed(2)}</Text>
-          <View style={styles.balanceFooter}>
-            <View style={styles.balanceItem}>
-              <Ionicons name="trending-up" size={16} color={Colors.white} />
-              <Text style={styles.balanceItemText}>Income: ${income}</Text>
-            </View>
-            <View style={styles.balanceItem}>
-              <Ionicons name="trending-down" size={16} color={Colors.white} />
-              <Text style={styles.balanceItemText}>Spent: ${spent}</Text>
-            </View>
-          </View>
-        </LinearGradient>
+        </TouchableOpacity>
 
         {/* Monthly Budget */}
-        <View style={styles.card}>
+        {!isFlipped && showCardContent && (
+        <Animated.View
+          style={[
+            styles.card,
+            {
+              transform: [
+                {
+                  translateY: cardSlideAnim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [50, 0],
+                  }),
+                },
+              ],
+              opacity: cardSlideAnim.interpolate({
+                inputRange: [0, 1],
+                outputRange: [0, 1],
+              }),
+            },
+          ]}
+        >
           <View style={styles.cardHeader}>
             <Text style={styles.cardTitle}>Monthly Budget</Text>
             <View style={styles.badge}>
@@ -185,10 +425,30 @@ export default function HomeScreen() {
             <Ionicons name="alert-circle" size={16} color={Colors.error} />
             <Text style={styles.warningText}>You're close to your budget limit!</Text>
           </View>
-        </View>
+        </Animated.View>
+        )}
 
         {/* Recent Transactions */}
-        <View style={styles.card}>
+        {!isFlipped && showCardContent && (
+        <Animated.View
+          style={[
+            styles.card,
+            {
+              transform: [
+                {
+                  translateY: transactionsSlideAnim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [50, 0],
+                  }),
+                },
+              ],
+              opacity: transactionsSlideAnim.interpolate({
+                inputRange: [0, 1],
+                outputRange: [0, 1],
+              }),
+            },
+          ]}
+        >
           <View style={styles.cardHeader}>
             <Text style={styles.cardTitle}>Recent Transactions</Text>
             <View style={styles.dropdownContainer}>
@@ -462,7 +722,8 @@ export default function HomeScreen() {
               );
             })
           )}
-        </View>
+        </Animated.View>
+        )}
 
         <View style={{ height: 20 }} />
       </RefreshableScrollView>
@@ -485,12 +746,13 @@ const styles = StyleSheet.create({
   balanceCard: {
     borderRadius: 16,
     padding: 12,
-    marginBottom: 16,
+    marginBottom: 0,
     shadowColor: Colors.black,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 8,
     elevation: 3,
+    zIndex: 15,
   },
   balanceHeader: {
     flexDirection: 'row',
@@ -535,6 +797,7 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 2,
     overflow: 'visible',
+    zIndex: 10,
   },
   cardHeader: {
     flexDirection: 'row',
@@ -816,5 +1079,66 @@ const styles = StyleSheet.create({
   dropdownOptionTextSelected: {
     color: Colors.white,
     fontWeight: '600',
+  },
+  flipContainer: {
+    marginBottom: 16,
+    position: 'relative',
+    zIndex: 50,
+  },
+  flipCard: {
+    backfaceVisibility: 'hidden',
+    zIndex: 50,
+  },
+  flipCardBack: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 50,
+  },
+  paymentMethodsLoading: {
+    paddingVertical: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  paymentMethodsList: {
+    marginTop: 12,
+    gap: 10,
+  },
+  paymentMethodItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    backgroundColor: 'rgba(255, 255, 255, 0.15)',
+    borderRadius: 10,
+  },
+  paymentMethodLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  paymentMethodName: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: Colors.white,
+  },
+  paymentMethodBalance: {
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  paymentMethodPositive: {
+    color: '#4ade80',
+  },
+  paymentMethodNegative: {
+    color: '#fca5a5',
+  },
+  paymentMethodEmpty: {
+    fontSize: 14,
+    color: Colors.white,
+    opacity: 0.8,
+    textAlign: 'center',
+    paddingVertical: 20,
   },
 });
