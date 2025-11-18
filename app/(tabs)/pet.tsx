@@ -5,7 +5,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, Gradients } from '../../constants/theme';
 import { RefreshableScrollView } from '../../components/refreshable-scroll-view';
-import FloatingChatButton from '../../components/floating-chat-button';
+
 
 export default function PetScreen() {
   const [refreshing, setRefreshing] = useState(false);
@@ -174,9 +174,6 @@ export default function PetScreen() {
 
         <View style={{ height: 20 }} />
       </RefreshableScrollView>
-
-      {/* Floating Chat Button */}
-      <FloatingChatButton />
     </SafeAreaView>
   );
 }

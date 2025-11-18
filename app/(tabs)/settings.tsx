@@ -1281,9 +1281,6 @@ export default function SettingsScreen() {
           </View>
         </View>
       </Modal>
-
-      {/* Floating Chat Button */}
-      <FloatingChatButton />
     </SafeAreaView>
   );
 }

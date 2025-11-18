@@ -15,7 +15,6 @@ import { getPaymentMethods, type PaymentMethod } from '../../src/services/paymen
 import { processReceiptImage, type ReceiptData, type ProcessingProgress } from '../../src/services/receipt-processor';
 import { useAuth } from '../../src/providers/AuthProvider';
 import { TextInput as GestureTextInput } from 'react-native-gesture-handler';
-import FloatingChatButton from '../../components/floating-chat-button';
 
 type InputMethod = 'manual' | 'receipt';
 
@@ -755,13 +754,13 @@ export default function AddScreen() {
                 Swipe left on any item to delete it.
               </Text>
             )}
-            {itemlist.length === 0 && (
+            {/* {itemlist.length === 0 && (
               <View style={styles.emptyItemListPlaceholder}>
                 <Ionicons name="list-outline" size={32} color={Colors.gray300} />
                 <Text style={styles.emptyItemListText}>No items added yet</Text>
                 <Text style={styles.emptyItemListSubtext}>Add items to break down your transaction</Text>
               </View>
-            )}
+            )} */}
             {itemlist.length > 0 && (
               <View style={styles.itemListHeader}>
                 <Text style={[styles.itemHeaderText, { flex: 1 }]}>Item</Text>
@@ -962,7 +961,7 @@ export default function AddScreen() {
           </View>
 
           {/* Transaction Summary */}
-          <View style={styles.summaryCard}>
+          {/* <View style={styles.summaryCard}>
             <View style={styles.summaryRow}>
               <Text style={styles.summaryLabel}>Total Amount:</Text>
               <Text style={styles.summaryAmount}>
@@ -987,7 +986,7 @@ export default function AddScreen() {
                 <Text style={styles.summaryValue}>{selectedPaymentMethod}</Text>
               </View>
             )}
-          </View>
+          </View> */}
 
           {/* Save Button */}
           <TouchableOpacity 
@@ -1259,9 +1258,6 @@ export default function AddScreen() {
           </View>
         </View>
       </Modal>
-
-      {/* Floating Chat Button */}
-      <FloatingChatButton />
     </SafeAreaView>
   );
 }

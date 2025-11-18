@@ -80,7 +80,17 @@ export default function FloatingChatButton({ onPress }: FloatingChatButtonProps)
     if (!isLoadingMessages.current) {
       const saveMessages = async () => {
         try {
-          await AsyncStorage.setItem('chatMessages', JSON.stringify(messages));
+          // Create a serializable version of messages
+          const serializableMessages = messages.map(msg => ({
+            ...msg,
+            toolCall: msg.toolCall ? {
+              ...msg.toolCall,
+              // Remove any non-serializable properties from arguments and result
+              arguments: JSON.parse(JSON.stringify(msg.toolCall.arguments || {})),
+              result: msg.toolCall.result ? JSON.parse(JSON.stringify(msg.toolCall.result)) : undefined,
+            } : undefined,
+          }));
+          await AsyncStorage.setItem('chatMessages', JSON.stringify(serializableMessages));
         } catch (error) {
           console.error('Error saving chat messages:', error);
         }
@@ -708,7 +718,7 @@ const styles = StyleSheet.create({
   fabGradient: {
     position: 'absolute',
     right: 16,
-    bottom: 100,
+    bottom: 152,
     width: 48,
     height: 48,
     borderRadius: 24,
