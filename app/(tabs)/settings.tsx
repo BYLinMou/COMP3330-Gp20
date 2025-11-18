@@ -98,6 +98,8 @@ export default function SettingsScreen() {
       // Check if models are empty and no previously selected models
       if (availableModels.length === 0 && !receiptModel && !chatModel && !fallbackModel) {
         console.log('[Settings] No models available, prompting user to fetch');
+        setShowModelSelection(true);
+        /*
         Alert.alert(
           'No Models Available',
           'You need to fetch the available models first. Would you like to fetch them now?',
@@ -126,7 +128,7 @@ export default function SettingsScreen() {
               },
             },
           ]
-        );
+        );*/
       } else {
         setShowModelSelection(true);
       }
