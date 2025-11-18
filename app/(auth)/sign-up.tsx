@@ -7,6 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../../src/services/supabase';
 import { initializeUserAccount } from '../../src/services/profiles';
 import { Colors } from '../../constants/theme';
+import PetSelectionModal, { PetOption } from '../../components/pet-selection-modal';
 
 export default function SignUp() {
   const [email, setEmail] = useState('');
@@ -15,6 +16,8 @@ export default function SignUp() {
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [showPetSelection, setShowPetSelection] = useState(false);
+  const [selectedPet, setSelectedPet] = useState<PetOption | null>(null);
   const router = useRouter();
 
   async function onSignUp() {
@@ -33,6 +36,22 @@ export default function SignUp() {
       return;
     }
 
+    // Show pet selection modal before creating account
+    setShowPetSelection(true);
+  }
+
+  async function handlePetSelected(pet: PetOption) {
+    setSelectedPet(pet);
+    setShowPetSelection(false);
+    await createAccount(pet);
+  }
+
+  async function handleSkipPetSelection() {
+    setShowPetSelection(false);
+    await createAccount(null);
+  }
+
+  async function createAccount(pet: PetOption | null) {
     setLoading(true);
     
     try {
@@ -49,8 +68,13 @@ export default function SignUp() {
       // Step 2: Initialize user account (create profile, categories, pet, etc.)
       if (data.user) {
         try {
-          // Pass the user ID to ensure it's used even if session isn't fully initialized
-          await initializeUserAccount(data.user.id);
+          // Pass the user ID and selected pet to ensure it's used even if session isn't fully initialized
+          await initializeUserAccount(data.user.id, pet ? {
+            petType: pet.type,
+            petBreed: pet.breed,
+            petName: pet.name,
+            petEmoji: pet.emoji,
+          } : undefined);
           console.log('✅ User account initialized successfully');
         } catch (initError) {
           console.error('❌ Error initializing user account:', initError);
@@ -68,7 +92,7 @@ export default function SignUp() {
 
       Alert.alert(
         'Success!',
-        'Account created successfully. Please check your email to verify your account.',
+        `Welcome to AuraSpend${pet ? ' with your ' + pet.name : ''}! Please check your email to verify your account.`,
         [{ text: 'OK', onPress: () => router.replace('/(auth)/sign-in') }]
       );
     } catch (error: any) {
@@ -192,6 +216,13 @@ export default function SignUp() {
 
         <View style={{ height: 40 }} />
       </View>
+
+      {/* Pet Selection Modal */}
+      <PetSelectionModal
+        visible={showPetSelection}
+        onSelect={handlePetSelected}
+        onSkip={handleSkipPetSelection}
+      />
     </>
   );
 

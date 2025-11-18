@@ -88,11 +88,17 @@ export async function createProfile() {
  * Initialize a complete user account with profile, default categories, pet, etc.
  * Call this after successful sign up
  */
-export async function initializeUserAccount() {
+export async function initializeUserAccount(userId?: string, petInfo?: {
+  petType: string;
+  petBreed: string;
+  petName: string;
+  petEmoji: string;
+}) {
   try {
     const { data: { user } } = await supabase.auth.getUser();
+    const targetUserId = userId || user?.id;
     
-    if (!user) {
+    if (!targetUserId) {
       throw new Error('User not authenticated');
     }
 
@@ -103,7 +109,7 @@ export async function initializeUserAccount() {
     const { data: existingCategories } = await supabase
       .from('categories')
       .select('id')
-      .eq('user_id', user.id)
+      .eq('user_id', targetUserId)
       .limit(1);
 
     // Create default categories only if none exist
@@ -124,7 +130,7 @@ export async function initializeUserAccount() {
         .from('categories')
         .insert(
           defaultCategories.map(name => ({
-            user_id: user.id,
+            user_id: targetUserId,
             name,
           }))
         );
@@ -138,25 +144,55 @@ export async function initializeUserAccount() {
     const { data: existingPet } = await supabase
       .from('pet_state')
       .select('user_id')
-      .eq('user_id', user.id)
+      .eq('user_id', targetUserId)
       .single();
 
     // Initialize pet state only if it doesn't exist
     if (!existingPet) {
-      const { error: petError } = await supabase
+      const { data: petState, error: petError } = await supabase
         .from('pet_state')
         .insert([
           {
-            user_id: user.id,
+            user_id: targetUserId,
             mood: 50,
             hunger: 100,
             xp: 0,
             level: 1,
           }
-        ]);
+        ])
+        .select()
+        .single();
 
       if (petError) {
         console.error('Error initializing pet:', petError);
+      }
+
+      // If pet info provided, create the first pet
+      if (petInfo && petState) {
+        const { data: userPet, error: userPetError } = await supabase
+          .from('user_pets')
+          .insert([
+            {
+              user_id: targetUserId,
+              pet_type: petInfo.petType,
+              pet_breed: petInfo.petBreed,
+              pet_name: petInfo.petName,
+              pet_emoji: petInfo.petEmoji,
+              is_active: true,
+            }
+          ])
+          .select()
+          .single();
+
+        if (userPetError) {
+          console.error('Error creating user pet:', userPetError);
+        } else if (userPet) {
+          // Update pet state with current pet ID
+          await supabase
+            .from('pet_state')
+            .update({ current_pet_id: userPet.id })
+            .eq('user_id', targetUserId);
+        }
       }
     }
 

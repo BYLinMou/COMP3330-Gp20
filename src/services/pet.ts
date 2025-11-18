@@ -8,7 +8,38 @@ export interface PetState {
   level: number;       // Current level
   last_feed_at: string;
   updated_at: string;
+  current_pet_id?: string;
 }
+
+export interface UserPet {
+  id: string;
+  user_id: string;
+  pet_type: string;    // 'dog', 'cat', 'turtle', 'hamster', etc.
+  pet_breed: string;   // 'Labrador', 'Persian', etc.
+  pet_name: string;    // User's name for the pet
+  pet_emoji: string;   // Emoji representation
+  is_active: boolean;  // Currently active pet
+  purchased_at: string;
+  created_at: string;
+}
+
+export interface AvailablePet {
+  id: string;
+  type: string;
+  breed: string;
+  emoji: string;
+  xp_cost: number;
+  description: string;
+}
+
+// Available pets for purchase
+export const AVAILABLE_PETS: AvailablePet[] = [
+  { id: 'turtle_common', type: 'turtle', breed: 'Box Turtle', emoji: '🐢', xp_cost: 500, description: 'Slow and steady wins the race!' },
+  { id: 'hamster_syrian', type: 'hamster', breed: 'Syrian Hamster', emoji: '🐹', xp_cost: 400, description: 'Energetic and adorable!' },
+  { id: 'rabbit_dutch', type: 'rabbit', breed: 'Dutch Rabbit', emoji: '🐰', xp_cost: 600, description: 'Hop to financial success!' },
+  { id: 'bird_parrot', type: 'bird', breed: 'Parrot', emoji: '🦜', xp_cost: 700, description: 'Squawk your way to savings!' },
+  { id: 'fish_goldfish', type: 'fish', breed: 'Goldfish', emoji: '🐠', xp_cost: 300, description: 'Swimming in savings!' },
+];
 
 /**
  * Get the current user's pet state
@@ -45,9 +76,14 @@ export async function getPetState() {
 }
 
 /**
- * Initialize pet state for a new user
+ * Initialize pet state for a new user with optional starting pet
  */
-export async function initializePet() {
+export async function initializePet(petInfo?: {
+  petType: string;
+  petBreed: string;
+  petName: string;
+  petEmoji: string;
+}) {
   try {
     const { data: { user } } = await supabase.auth.getUser();
     
@@ -55,7 +91,8 @@ export async function initializePet() {
       throw new Error('User not authenticated');
     }
 
-    const { data, error } = await supabase
+    // Create initial pet state
+    const { data: petState, error: stateError } = await supabase
       .from('pet_state')
       .insert([
         {
@@ -69,12 +106,41 @@ export async function initializePet() {
       .select()
       .single();
 
-    if (error) {
-      console.error('Error initializing pet:', error);
-      throw error;
+    if (stateError) {
+      console.error('Error initializing pet state:', stateError);
+      throw stateError;
     }
 
-    return data as PetState;
+    // If pet info provided, create the first pet
+    if (petInfo) {
+      const { data: userPet, error: petError } = await supabase
+        .from('user_pets')
+        .insert([
+          {
+            user_id: user.id,
+            pet_type: petInfo.petType,
+            pet_breed: petInfo.petBreed,
+            pet_name: petInfo.petName,
+            pet_emoji: petInfo.petEmoji,
+            is_active: true,
+          }
+        ])
+        .select()
+        .single();
+
+      if (petError) {
+        console.error('Error creating user pet:', petError);
+        // Don't throw - pet state is created, pet can be added later
+      } else if (userPet) {
+        // Update pet state with current pet ID
+        await supabase
+          .from('pet_state')
+          .update({ current_pet_id: userPet.id })
+          .eq('user_id', user.id);
+      }
+    }
+
+    return petState as PetState;
   } catch (error) {
     console.error('Failed to initialize pet:', error);
     throw error;
@@ -213,6 +279,171 @@ export async function updatePetStatus() {
     return currentState;
   } catch (error) {
     console.error('Failed to update pet status:', error);
+    throw error;
+  }
+}
+
+/**
+ * Get all user's pets
+ */
+export async function getUserPets() {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    
+    if (!user) {
+      throw new Error('User not authenticated');
+    }
+
+    const { data, error } = await supabase
+      .from('user_pets')
+      .select('*')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: true });
+
+    if (error) {
+      console.error('Error fetching user pets:', error);
+      throw error;
+    }
+
+    return (data || []) as UserPet[];
+  } catch (error) {
+    console.error('Failed to fetch user pets:', error);
+    throw error;
+  }
+}
+
+/**
+ * Get the currently active pet
+ */
+export async function getActivePet() {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    
+    if (!user) {
+      throw new Error('User not authenticated');
+    }
+
+    const { data, error } = await supabase
+      .from('user_pets')
+      .select('*')
+      .eq('user_id', user.id)
+      .eq('is_active', true)
+      .single();
+
+    if (error && error.code !== 'PGRST116') {
+      console.error('Error fetching active pet:', error);
+      throw error;
+    }
+
+    return data as UserPet | null;
+  } catch (error) {
+    console.error('Failed to fetch active pet:', error);
+    throw error;
+  }
+}
+
+/**
+ * Switch to a different pet
+ */
+export async function switchPet(petId: string) {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    
+    if (!user) {
+      throw new Error('User not authenticated');
+    }
+
+    // Deactivate all pets
+    await supabase
+      .from('user_pets')
+      .update({ is_active: false })
+      .eq('user_id', user.id);
+
+    // Activate the selected pet
+    const { data, error } = await supabase
+      .from('user_pets')
+      .update({ is_active: true })
+      .eq('id', petId)
+      .eq('user_id', user.id)
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Error switching pet:', error);
+      throw error;
+    }
+
+    // Update pet state with new current pet
+    await supabase
+      .from('pet_state')
+      .update({ current_pet_id: petId })
+      .eq('user_id', user.id);
+
+    return data as UserPet;
+  } catch (error) {
+    console.error('Failed to switch pet:', error);
+    throw error;
+  }
+}
+
+/**
+ * Purchase a new pet with XP
+ */
+export async function purchasePet(petId: string) {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    
+    if (!user) {
+      throw new Error('User not authenticated');
+    }
+
+    // Get available pet info
+    const availablePet = AVAILABLE_PETS.find(p => p.id === petId);
+    if (!availablePet) {
+      throw new Error('Pet not found');
+    }
+
+    // Check if user has enough XP
+    const currentState = await getPetState();
+    if (currentState.xp < availablePet.xp_cost) {
+      throw new Error(`Not enough XP. You need ${availablePet.xp_cost} XP but only have ${currentState.xp} XP.`);
+    }
+
+    // Deduct XP
+    const { error: xpError } = await supabase
+      .from('pet_state')
+      .update({ xp: currentState.xp - availablePet.xp_cost })
+      .eq('user_id', user.id);
+
+    if (xpError) {
+      console.error('Error deducting XP:', xpError);
+      throw xpError;
+    }
+
+    // Create the new pet
+    const { data: newPet, error: petError } = await supabase
+      .from('user_pets')
+      .insert([
+        {
+          user_id: user.id,
+          pet_type: availablePet.type,
+          pet_breed: availablePet.breed,
+          pet_name: availablePet.breed,
+          pet_emoji: availablePet.emoji,
+          is_active: false,
+        }
+      ])
+      .select()
+      .single();
+
+    if (petError) {
+      console.error('Error creating pet:', petError);
+      throw petError;
+    }
+
+    return { pet: newPet as UserPet, xpSpent: availablePet.xp_cost };
+  } catch (error) {
+    console.error('Failed to purchase pet:', error);
     throw error;
   }
 }
