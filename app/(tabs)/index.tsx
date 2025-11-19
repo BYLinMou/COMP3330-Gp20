@@ -15,6 +15,7 @@ import {
 } from '../../src/services/transactions';
 import { getPaymentMethods } from '../../src/services/payment-methods';
 import { useAuth } from '../../src/providers/AuthProvider';
+import { getItemsByTransaction, type ItemRow, debugGetAllUserItems } from '../../src/services/items';
 
 const { width } = Dimensions.get('window');
 
@@ -46,6 +47,7 @@ export default function HomeScreen() {
   const [showLimitDropdown, setShowLimitDropdown] = useState(false);
   const [expandedTransactionId, setExpandedTransactionId] = useState<string | null>(null);
   const [pressedTransactionId, setPressedTransactionId] = useState<string | null>(null);
+  const [transactionItems, setTransactionItems] = useState<Record<string, ItemRow[]>>({});
   const [isFlipped, setIsFlipped] = useState(false);
   const [paymentMethodBalances, setPaymentMethodBalances] = useState<Record<string, number>>({});
   const [loadingPaymentMethods, setLoadingPaymentMethods] = useState(false);
@@ -215,6 +217,13 @@ export default function HomeScreen() {
       setIncome(stats.income);
       setSpent(stats.expenses);
       setBalance(stats.balance);
+      
+      // Debug: 检查所有 items
+      try {
+        await debugGetAllUserItems();
+      } catch (e) {
+        console.log('[DEBUG] Failed to fetch all items for debugging:', e);
+      }
     } catch (error) {
       console.error('Error loading dashboard data:', error);
     } finally {
@@ -510,11 +519,28 @@ export default function HomeScreen() {
               return (
                 <Pressable
                   key={transaction.id}
-                  onPress={() => {
+                  onPress={async () => {
                     if (expandedTransactionId === transaction.id) {
                       setExpandedTransactionId(null);
                     } else {
                       setExpandedTransactionId(transaction.id);
+                      // 获取该交易的 items
+                      if (!transactionItems[transaction.id]) {
+                        try {
+                          console.log(`[DEBUG] Fetching items for transaction: ${transaction.id}`);
+                          const items = await getItemsByTransaction(transaction.id);
+                          console.log(`[DEBUG] Found ${items.length} items:`, items);
+                          setTransactionItems(prev => ({
+                            ...prev,
+                            [transaction.id]: items
+                          }));
+                        } catch (error) {
+                          console.error('Failed to fetch transaction items:', error);
+                          Alert.alert('Error', 'Failed to load items');
+                        }
+                      } else {
+                        console.log(`[DEBUG] Using cached items for transaction: ${transaction.id}`, transactionItems[transaction.id]);
+                      }
                     }
                   }}
                   onPressIn={() => {
@@ -659,24 +685,28 @@ export default function HomeScreen() {
                     </View>
 
                     {/* Items */}
-                    {(transaction as any).items && (transaction as any).items.length > 0 && (
-                      <View style={styles.expandedDetailRow}>
-                        <Text style={styles.expandedDetailLabel}>Items</Text>
-                        <View style={styles.itemsList}>
-                          {(transaction as any).items.map((item: any, index: number) => (
-                            <View key={index} style={styles.itemsListRow}>
-                              <Text style={styles.itemsListName}>{item.name}</Text>
-                              <View style={styles.itemsListQtyPrice}>
-                                <Text style={styles.itemsListQty}>×{item.amount}</Text>
-                                <Text style={styles.itemsListPrice}>
-                                  ${(item.price * item.amount).toFixed(2)}
-                                </Text>
+                    {(() => {
+                      const items = transactionItems[transaction.id];
+                      console.log(`[DEBUG] Rendering items for ${transaction.id}:`, items);
+                      return items && items.length > 0 && (
+                        <View style={styles.expandedDetailRow}>
+                          <Text style={styles.expandedDetailLabel}>Items ({items.length})</Text>
+                          <View style={styles.itemsList}>
+                            {items.map((item, index) => (
+                              <View key={item.id || index} style={styles.itemsListRow}>
+                                <Text style={styles.itemsListName}>{item.item_name}</Text>
+                                <View style={styles.itemsListQtyPrice}>
+                                  <Text style={styles.itemsListQty}>×{item.item_amount}</Text>
+                                  <Text style={styles.itemsListPrice}>
+                                    ${(item.item_price * item.item_amount).toFixed(2)}
+                                  </Text>
+                                </View>
                               </View>
-                            </View>
-                          ))}
+                            ))}
+                          </View>
                         </View>
-                      </View>
-                    )}
+                      );
+                    })()}
 
                     {/* Notes */}
                     {transaction.note && (
