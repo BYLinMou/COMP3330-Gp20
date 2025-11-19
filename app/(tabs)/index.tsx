@@ -15,6 +15,8 @@ import {
   type Transaction 
 } from '../../src/services/transactions';
 import { getPaymentMethods } from '../../src/services/payment-methods';
+import { getMonthlyBudgetAmount } from '../../src/services/budgets';
+import { getProfile } from '../../src/services/profiles';
 import { useAuth } from '../../src/providers/AuthProvider';
 import { getItemsByTransaction, type ItemRow, debugGetAllUserItems } from '../../src/services/items';
 
@@ -60,7 +62,7 @@ export default function HomeScreen() {
   const cardSlideAnim = React.useRef(new Animated.Value(0)).current;
   const transactionsSlideAnim = React.useRef(new Animated.Value(0)).current;
 
-  const budget = 2000; // This could also come from Supabase
+  const [budget, setBudget] = useState(2000); // Budget from Supabase
   const budgetUsed = Math.round((spent / budget) * 100);
   const limitOptions = [5, 10, 20, 50, 100];
 
@@ -210,15 +212,20 @@ export default function HomeScreen() {
       const endDate = lastDay.toISOString().split('T')[0];
 
       // Fetch all data in parallel
-      const [transactions, stats] = await Promise.all([
+      const [transactions, stats, monthlyBudget, profile] = await Promise.all([
         getRecentTransactions(transactionLimit),
         getIncomeAndExpenses(startDate, endDate),
+        getMonthlyBudgetAmount(),
+        getProfile(),
       ]);
 
       setRecentTransactions(transactions);
-      setIncome(stats.income);
+      // Use profile income if set, otherwise use calculated income from transactions
+      setIncome(profile?.income || stats.income);
       setSpent(stats.expenses);
-      setBalance(stats.balance);
+      // Balance = income - expenses
+      setBalance((profile?.income || stats.income) - stats.expenses);
+      setBudget(monthlyBudget);
       
       // Debug: 检查所有 items
       try {
@@ -245,15 +252,20 @@ export default function HomeScreen() {
       const endDate = lastDay.toISOString().split('T')[0];
 
       // Fetch all data in parallel
-      const [transactions, stats] = await Promise.all([
+      const [transactions, stats, monthlyBudget, profile] = await Promise.all([
         getRecentTransactions(transactionLimit),
         getIncomeAndExpenses(startDate, endDate),
+        getMonthlyBudgetAmount(),
+        getProfile(),
       ]);
 
       setRecentTransactions(transactions);
-      setIncome(stats.income);
+      // Use profile income if set, otherwise use calculated income from transactions
+      setIncome(profile?.income || stats.income);
       setSpent(stats.expenses);
-      setBalance(stats.balance);
+      // Balance = income - expenses
+      setBalance((profile?.income || stats.income) - stats.expenses);
+      setBudget(monthlyBudget);
     } catch (error) {
       console.error('Error refreshing dashboard data:', error);
     } finally {

@@ -1,5 +1,6 @@
 import { supabase } from './supabase';
 import type { Category } from './categories';
+import { getProfile } from './profiles';
 
 export interface Transaction {
   id: string;
@@ -17,16 +18,6 @@ export interface Transaction {
   category?: Category;
 }
 
-export interface Budget {
-  id: string;
-  user_id: string;
-  period: 'monthly' | 'yearly';
-  amount: number;
-  start_date: string;
-  created_at: string;
-  updated_at: string;
-}
-
 export type TransactionRealtimeEvent = 'INSERT' | 'UPDATE' | 'DELETE';
 export type TransactionChange = {
   eventType: TransactionRealtimeEvent;
@@ -42,45 +33,61 @@ export async function subscribeToTransactionChanges(
   onChange: (change: TransactionChange) => void,
   options?: { userId?: string }
 ) {
-  const { userId } = options || {};
-  const user = userId
-    ? { id: userId }
-    : (await supabase.auth.getUser()).data.user;
+  try {
+    const { userId } = options || {};
+    const user = userId
+      ? { id: userId }
+      : (await supabase.auth.getUser()).data.user;
 
-  if (!user) {
-    throw new Error('User not authenticated');
-  }
-
-  const channel = supabase
-    .channel(`public:transactions:${user.id}`)
-    .on(
-      'postgres_changes',
-      {
-        event: '*',
-        schema: 'public',
-        table: 'transactions',
-        filter: `user_id=eq.${user.id}`,
-      },
-      (payload: any) => {
-        onChange({
-          eventType: payload.eventType as TransactionRealtimeEvent,
-          new: (payload.new ?? null) as Transaction | null,
-          old: (payload.old ?? null) as Transaction | null,
-        });
-      }
-    )
-    .subscribe();
-
-  // Return cleanup function
-  return async () => {
-    try {
-      await channel.unsubscribe();
-    } catch (e) {
-      // Fallback
-      // @ts-ignore
-      supabase.removeChannel?.(channel);
+    if (!user) {
+      throw new Error('User not authenticated');
     }
-  };
+
+    const channel = supabase
+      .channel(`public:transactions:${user.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'transactions',
+          filter: `user_id=eq.${user.id}`,
+        },
+        (payload: any) => {
+          console.log('[Transactions Service] Realtime event received:', payload.eventType);
+          onChange({
+            eventType: payload.eventType as TransactionRealtimeEvent,
+            new: (payload.new ?? null) as Transaction | null,
+            old: (payload.old ?? null) as Transaction | null,
+          });
+        }
+      )
+      .subscribe((status, err) => {
+        if (status === 'SUBSCRIBED') {
+          console.log('[Transactions Service] ✓ Successfully subscribed to realtime updates');
+        } else if (status === 'CHANNEL_ERROR') {
+          console.warn('[Transactions Service] ⚠️ Realtime subscription failed. This is expected if Realtime is not enabled.');
+          console.warn('[Transactions Service] To enable: Go to Supabase Dashboard → Database → Replication → Enable for "transactions" table');
+        } else if (status === 'TIMED_OUT') {
+          console.warn('[Transactions Service] ⚠️ Realtime subscription timed out.');
+        }
+      });
+
+    // Return cleanup function
+    return async () => {
+      try {
+        await channel.unsubscribe();
+      } catch (e) {
+        // Fallback
+        // @ts-ignore
+        supabase.removeChannel?.(channel);
+      }
+    };
+  } catch (error) {
+    console.error('[Transactions Service] Failed to setup realtime subscription:', error);
+    // Return a no-op cleanup function
+    return async () => {};
+  }
 }
 
 /**
@@ -197,6 +204,7 @@ export async function getSpendingBreakdown(startDate: string, endDate: string) {
 
 /**
  * Calculate total income and expenses for a date range
+ * Uses profile income if set, otherwise uses calculated income from transactions
  */
 export async function getIncomeAndExpenses(startDate: string, endDate: string) {
   try {
@@ -219,7 +227,9 @@ export async function getIncomeAndExpenses(startDate: string, endDate: string) {
     }
 
     const transactions = data as Transaction[];
-    const income = transactions
+    
+    // Calculate income from transactions
+    const transactionIncome = transactions
       .filter(t => t.amount > 0)
       .reduce((sum, t) => sum + t.amount, 0);
     
@@ -228,6 +238,10 @@ export async function getIncomeAndExpenses(startDate: string, endDate: string) {
         .filter(t => t.amount < 0)
         .reduce((sum, t) => sum + t.amount, 0)
     );
+
+    // Get profile income (use this as primary source)
+    const profile = await getProfile();
+    const income = profile?.income || transactionIncome;
 
     return { income, expenses, balance: income - expenses };
   } catch (error) {
@@ -453,9 +467,10 @@ export function filterTransactions(
 
 /**
  * Get transaction statistics
+ * Uses profile income if available, otherwise calculates from transactions
  */
 export function getTransactionStats(transactions: Transaction[]) {
-  const income = transactions
+  const transactionIncome = transactions
     .filter((t) => t.amount > 0)
     .reduce((sum, t) => sum + t.amount, 0);
 
@@ -465,80 +480,19 @@ export function getTransactionStats(transactions: Transaction[]) {
       .reduce((sum, t) => sum + t.amount, 0)
   );
 
+  // Note: This function is synchronous, so we can't fetch profile here
+  // The caller should use getIncomeAndExpenses for accurate income
   return {
-    totalIncome: income,
+    totalIncome: transactionIncome,
     totalExpense: expense,
-    balance: income - expense,
+    balance: transactionIncome - expense,
     count: transactions.length,
   };
 }
 
-/**
- * Get current budget
- */
-export async function getCurrentBudget() {
-  try {
-    const { data: { user } } = await supabase.auth.getUser();
-    
-    if (!user) {
-      throw new Error('User not authenticated');
-    }
-
-    const now = new Date().toISOString().split('T')[0];
-
-    const { data, error } = await supabase
-      .from('budgets')
-      .select('*')
-      .eq('user_id', user.id)
-      .lte('start_date', now)
-      .order('start_date', { ascending: false })
-      .limit(1)
-      .single();
-
-    if (error && error.code !== 'PGRST116') { // PGRST116 = no rows
-      console.error('Error fetching budget:', error);
-      throw error;
-    }
-
-    return data as Budget | null;
-  } catch (error) {
-    console.error('Failed to fetch budget:', error);
-    throw error;
-  }
-}
-
-/**
- * Set or update budget
- */
-export async function setBudget(amount: number, period: 'monthly' | 'yearly', startDate: string) {
-  try {
-    const { data: { user } } = await supabase.auth.getUser();
-    
-    if (!user) {
-      throw new Error('User not authenticated');
-    }
-
-    const { data, error } = await supabase
-      .from('budgets')
-      .insert([
-        {
-          amount,
-          period,
-          start_date: startDate,
-          user_id: user.id,
-        }
-      ])
-      .select()
-      .single();
-
-    if (error) {
-      console.error('Error setting budget:', error);
-      throw error;
-    }
-
-    return data as Budget;
-  } catch (error) {
-    console.error('Failed to set budget:', error);
-    throw error;
-  }
-}
+// Budget functions have been moved to budgets.ts
+// Please import from './budgets' instead
+// - getCurrentBudget()
+// - setBudget()
+// - updateCurrentBudget()
+// - getMonthlyBudgetAmount()

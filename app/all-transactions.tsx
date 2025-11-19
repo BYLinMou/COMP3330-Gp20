@@ -29,6 +29,7 @@ import {
 import { getItemsByTransaction, type ItemRow } from '@/src/services/items';
 import { getCategories, type Category } from '@/src/services/categories';
 import { getPaymentMethods, type PaymentMethod } from '@/src/services/payment-methods';
+import { getProfile } from '@/src/services/profiles';
 
 type FilterType = 'all' | 'income' | 'expense';
 type SourceType = 'all' | 'manual' | 'ocr' | 'ai';
@@ -58,6 +59,7 @@ export default function AllTransactionsScreen() {
   const [filterType, setFilterType] = useState<FilterType>('all');
   const [expandedTransactionId, setExpandedTransactionId] = useState<string | null>(null);
   const [transactionItems, setTransactionItems] = useState<Record<string, ItemRow[]>>({});
+  const [profileIncome, setProfileIncome] = useState<number>(0);
   const blurAnimRef = React.useRef<{ [key: string]: Animated.Value }>({});
   
   // Advanced filters
@@ -73,6 +75,7 @@ export default function AllTransactionsScreen() {
   useEffect(() => {
     fetchTransactions();
     fetchFilterOptions();
+    fetchProfileIncome();
   }, []);
 
   useEffect(() => {
@@ -104,6 +107,15 @@ export default function AllTransactionsScreen() {
       setPaymentMethods(methods);
     } catch (error) {
       console.error('Failed to fetch filter options:', error);
+    }
+  };
+
+  const fetchProfileIncome = async () => {
+    try {
+      const profile = await getProfile();
+      setProfileIncome(profile?.income || 0);
+    } catch (error) {
+      console.error('Failed to fetch profile income:', error);
     }
   };
 
@@ -183,6 +195,10 @@ export default function AllTransactionsScreen() {
   };
 
   const stats = getTransactionStats(filteredTransactions);
+  
+  // Use profile income if available, otherwise use calculated income
+  const displayIncome = profileIncome || stats.totalIncome;
+  const displayBalance = displayIncome - stats.totalExpense;
 
   const renderFilterButton = (type: FilterType, label: string) => (
     <TouchableOpacity
@@ -463,7 +479,7 @@ export default function AllTransactionsScreen() {
           <View style={styles.statItem}>
             <Text style={styles.statLabel}>Income</Text>
             <Text style={[styles.statValue, styles.incomeAmount]}>
-              ${stats.totalIncome.toFixed(2)}
+              ${displayIncome.toFixed(2)}
             </Text>
           </View>
           <View style={styles.statDivider} />
@@ -476,8 +492,8 @@ export default function AllTransactionsScreen() {
           <View style={styles.statDivider} />
           <View style={styles.statItem}>
             <Text style={styles.statLabel}>Balance</Text>
-            <Text style={[styles.statValue, stats.balance >= 0 ? styles.incomeAmount : styles.expenseAmount]}>
-              ${stats.balance.toFixed(2)}
+            <Text style={[styles.statValue, displayBalance >= 0 ? styles.incomeAmount : styles.expenseAmount]}>
+              ${displayBalance.toFixed(2)}
             </Text>
           </View>
         </View>

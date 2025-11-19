@@ -25,6 +25,8 @@ import {
   type Category,
 } from '../../src/services/categories';
 import { getCurrencies, type Currency } from '../../src/services/currencies';
+import { getCurrentBudget, updateCurrentBudget, type Budget } from '../../src/services/budgets';
+import { getProfile, updateProfile } from '../../src/services/profiles';
 
 export default function SettingsScreen() {
   const { session } = useAuth();
@@ -36,6 +38,7 @@ export default function SettingsScreen() {
   const [currency, setCurrency] = useState('USD ($)');
   const [language, setLanguage] = useState('English');
   const [monthlyBudget, setMonthlyBudget] = useState('2000');
+  const [monthlyIncome, setMonthlyIncome] = useState('');
   const [refreshing, setRefreshing] = useState(false);
 
   const [budgetAlerts, setBudgetAlerts] = useState(true);
@@ -139,6 +142,8 @@ export default function SettingsScreen() {
   useEffect(() => {
     loadOpenAIConfig();
     loadCurrencies();
+    loadBudget();
+    loadProfile();
   }, []);
 
   // Focus effect: reload categories when navigating back to this screen
@@ -226,6 +231,75 @@ export default function SettingsScreen() {
       console.log('[Settings] Loaded currencies:', data);
     } catch (error) {
       console.error('Failed to load currencies:', error);
+    }
+  };
+
+  const loadProfile = async () => {
+    try {
+      const profile = await getProfile();
+      // username & primary currency from profile table
+      if (profile?.username != null) setFullName(profile.username);
+      if (profile?.primary_currency != null) setSelectedCurrency(profile.primary_currency);
+      if (profile?.income != null) setMonthlyIncome(profile.income.toString());
+    } catch (error) {
+      console.error('Failed to load profile:', error);
+    }
+  };
+
+  const loadBudget = async () => {
+    try {
+      const budget = await getCurrentBudget();
+      if (budget) {
+        // If it's a monthly budget, use amount directly
+        // If it's yearly, divide by 12 for monthly display
+        const monthlyAmount = budget.period === 'monthly' 
+          ? budget.amount 
+          : budget.amount / 12;
+        setMonthlyBudget(monthlyAmount.toString());
+      }
+    } catch (error) {
+      console.error('Failed to load budget:', error);
+    }
+  };
+
+  const handleSaveBudget = async () => {
+    const amount = parseFloat(monthlyBudget);
+    if (isNaN(amount) || amount <= 0) {
+      Alert.alert('Invalid Budget', 'Please enter a valid budget amount');
+      return;
+    }
+
+    try {
+      await updateCurrentBudget(amount);
+      Alert.alert('Success', 'Budget updated successfully');
+    } catch (error) {
+      console.error('Failed to save budget:', error);
+      Alert.alert('Error', 'Failed to save budget. Please try again.');
+    }
+  };
+
+  const handleSaveProfile = async () => {
+    if (!session) {
+      Alert.alert('Not signed in', 'Please sign in to update your profile.');
+      return;
+    }
+
+    try {
+      const updates = {
+        username: fullName.trim() === '' ? null : fullName.trim(),
+        primary_currency: selectedCurrency || null,
+        income: monthlyIncome.trim() === '' ? null : parseFloat(monthlyIncome),
+      } as any; // service has proper typing
+
+      await updateProfile(updates);
+
+      // Also save budget together for convenience
+      await handleSaveBudget();
+
+      Alert.alert('Success', 'Profile updated successfully');
+    } catch (error: any) {
+      console.error('Failed to save profile:', error);
+      Alert.alert('Error', error?.message || 'Failed to save profile');
     }
   };
 
@@ -493,7 +567,9 @@ export default function SettingsScreen() {
           <View style={styles.inputGroup}>
             <Text style={styles.inputLabel}>Monthly Budget</Text>
             <View style={styles.amountInput}>
-              <Text style={styles.currencySymbol}>$</Text>
+              <Text style={styles.currencySymbol}>
+                {currencyOptions.find(c => c.code === selectedCurrency)?.symbol || '$'}
+              </Text>
               <TextInput
                 style={styles.amountField}
                 value={monthlyBudget}
@@ -504,7 +580,23 @@ export default function SettingsScreen() {
             </View>
           </View>
 
-          <TouchableOpacity style={styles.saveButton}>
+          <View style={styles.inputGroup}>
+            <Text style={styles.inputLabel}>Monthly Income</Text>
+            <View style={styles.amountInput}>
+              <Text style={styles.currencySymbol}>
+                {currencyOptions.find(c => c.code === selectedCurrency)?.symbol || '$'}
+              </Text>
+              <TextInput
+                style={styles.amountField}
+                value={monthlyIncome}
+                onChangeText={setMonthlyIncome}
+                keyboardType="numeric"
+                placeholder="0"
+              />
+            </View>
+          </View>
+
+          <TouchableOpacity style={styles.saveButton} onPress={handleSaveProfile}>
             <Text style={styles.saveButtonText}>Save Profile Changes</Text>
           </TouchableOpacity>
             </View>
@@ -586,7 +678,8 @@ export default function SettingsScreen() {
                       </Text>
                     </View>
                   )}
-                </TouchableOpacity>                {showModelSelection && (
+                </TouchableOpacity>
+                {showModelSelection && (
                   <View style={{ marginTop: 6 }}>
                     {/* Fetch Models Button */}
                     <View style={{ alignItems: 'center' }}>

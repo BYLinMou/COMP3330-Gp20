@@ -134,68 +134,75 @@ export async function deleteCategory(id: string) {
 
 /**
  * Subscribe to realtime changes on categories for current user
+ * Note: Requires Realtime to be enabled in Supabase project settings
  */
 export async function subscribeToCategoryChanges(
   onChange: (change: CategoryChange) => void,
   options?: { userId?: string }
 ) {
-  const { userId } = options || {};
-  const user = userId ? { id: userId } : (await supabase.auth.getUser()).data.user;
-  if (!user) throw new Error('User not authenticated');
+  try {
+    const { userId } = options || {};
+    const user = userId ? { id: userId } : (await supabase.auth.getUser()).data.user;
+    if (!user) throw new Error('User not authenticated');
 
-  console.log('[Categories Service] Setting up realtime subscription for user:', user.id);
+    console.log('[Categories Service] Setting up realtime subscription for user:', user.id);
 
-  // Use a unique channel name to avoid conflicts
-  const channelName = `categories:${user.id}:${Date.now()}`;
-  
-  const channel = supabase
-    .channel(channelName, {
-      config: {
-        broadcast: { self: true },
-      },
-    })
-    .on(
-      'postgres_changes',
-      {
-        event: '*',
-        schema: 'public',
-        table: 'categories',
-        filter: `user_id=eq.${user.id}`,
-      },
-      (payload: any) => {
-        console.log('[Categories Service] Realtime event received:', {
-          eventType: payload.eventType,
-          newData: payload.new,
-          oldData: payload.old,
-        });
-        onChange({
-          eventType: payload.eventType as CategoryRealtimeEvent,
-          new: (payload.new ?? null) as Category | null,
-          old: (payload.old ?? null) as Category | null,
-        });
-      }
-    )
-    .subscribe((status, err) => {
-      console.log('[Categories Service] Subscription status:', {
-        status,
-        error: err,
-        channelName,
+    // Use a unique channel name to avoid conflicts
+    const channelName = `categories:${user.id}:${Date.now()}`;
+    
+    const channel = supabase
+      .channel(channelName, {
+        config: {
+          broadcast: { self: true },
+        },
+      })
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'categories',
+          filter: `user_id=eq.${user.id}`,
+        },
+        (payload: any) => {
+          console.log('[Categories Service] Realtime event received:', {
+            eventType: payload.eventType,
+            newData: payload.new,
+            oldData: payload.old,
+          });
+          onChange({
+            eventType: payload.eventType as CategoryRealtimeEvent,
+            new: (payload.new ?? null) as Category | null,
+            old: (payload.old ?? null) as Category | null,
+          });
+        }
+      )
+      .subscribe((status, err) => {
+        if (status === 'SUBSCRIBED') {
+          console.log('[Categories Service] ✓ Successfully subscribed to realtime updates');
+        } else if (status === 'CHANNEL_ERROR') {
+          console.warn('[Categories Service] ⚠️ Realtime subscription failed. This is expected if Realtime is not enabled in Supabase.');
+          console.warn('[Categories Service] To enable: Go to Supabase Dashboard → Database → Replication → Enable for "categories" table');
+        } else if (status === 'TIMED_OUT') {
+          console.warn('[Categories Service] ⚠️ Realtime subscription timed out. Check network connection.');
+        } else {
+          console.log('[Categories Service] Subscription status:', status, err);
+        }
       });
-      if (status === 'SUBSCRIBED') {
-        console.log('[Categories Service] Successfully subscribed to channel:', channelName);
-      } else if (status === 'CHANNEL_ERROR') {
-        console.error('[Categories Service] Channel error:', err);
+
+    console.log('[Categories Service] Channel created:', channelName);
+
+    return async () => {
+      console.log('[Categories Service] Unsubscribing from realtime:', channelName);
+      try {
+        await supabase.removeChannel(channel);
+      } catch (e) {
+        console.error('[Categories Service] Error during unsubscribe:', e);
       }
-    });
-
-  console.log('[Categories Service] Channel created:', channelName);
-
-  return async () => {
-    console.log('[Categories Service] Unsubscribing from realtime:', channelName);
-    try {
-      await supabase.removeChannel(channel);
-    } catch (e) {
-      console.error('[Categories Service] Error during unsubscribe:', e);
-    }
-  };
+    };
+  } catch (error) {
+    console.error('[Categories Service] Failed to setup realtime subscription:', error);
+    // Return a no-op cleanup function
+    return async () => {};
+  }
 }

@@ -1,5 +1,7 @@
 import { supabase } from './supabase';
 import type { Transaction } from './transactions';
+import { getMonthlyBudgetAmount } from './budgets';
+import { getProfile } from './profiles';
 
 export interface MonthlyTrend {
   month: string;
@@ -38,20 +40,8 @@ export async function getMonthlyTrends(monthsCount: number = 6): Promise<Monthly
       throw new Error('User not authenticated');
     }
 
-    // Get current budget (if exists)
-    const { data: budgetData } = await supabase
-      .from('budgets')
-      .select('amount, period')
-      .eq('user_id', user.id)
-      .order('start_date', { ascending: false })
-      .limit(1)
-      .single();
-
-    const monthlyBudget = budgetData?.period === 'monthly' 
-      ? budgetData.amount 
-      : budgetData?.period === 'yearly' 
-        ? budgetData.amount / 12 
-        : 2000; // Default budget
+    // Get monthly budget amount
+    const monthlyBudget = await getMonthlyBudgetAmount();
 
     // Calculate date range
     const endDate = new Date();
@@ -171,6 +161,7 @@ export async function getWeeklySpending(): Promise<WeeklySpending[]> {
 
 /**
  * Get spending summary for a date range
+ * Uses profile income if set, otherwise uses calculated income from transactions
  */
 export async function getSpendingSummary(startDate: string, endDate: string): Promise<SpendingSummary> {
   try {
@@ -193,7 +184,9 @@ export async function getSpendingSummary(startDate: string, endDate: string): Pr
     }
 
     const transactions = data as Transaction[];
-    const income = transactions
+    
+    // Calculate income from transactions
+    const transactionIncome = transactions
       .filter(t => t.amount > 0)
       .reduce((sum, t) => sum + t.amount, 0);
     
@@ -202,6 +195,10 @@ export async function getSpendingSummary(startDate: string, endDate: string): Pr
         .filter(t => t.amount < 0)
         .reduce((sum, t) => sum + t.amount, 0)
     );
+
+    // Get profile income (use this as primary source)
+    const profile = await getProfile();
+    const income = profile?.income || transactionIncome;
 
     return {
       totalIncome: income,

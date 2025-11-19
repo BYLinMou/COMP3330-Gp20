@@ -1,5 +1,6 @@
 import { getCategories, addCategory, updateCategory, deleteCategory } from './categories';
-import { getRecentTransactions, getTransactionsByDateRange, getSpendingBreakdown, getIncomeAndExpenses, addTransaction, updateTransaction, deleteTransaction, getCurrentBudget, setBudget } from './transactions';
+import { getRecentTransactions, getTransactionsByDateRange, getSpendingBreakdown, getIncomeAndExpenses, addTransaction, updateTransaction, deleteTransaction } from './transactions';
+import { getCurrentBudget, setBudget } from './budgets';
 import { getProfile } from './profiles';
 
 export interface Tool {

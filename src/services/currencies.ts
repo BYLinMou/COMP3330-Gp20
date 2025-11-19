@@ -19,7 +19,7 @@ export async function getCurrencies(): Promise<Currency[]> {
   // Default currency list
   const currencies: Currency[] = [
     { code: 'USD', symbol: '$', name: 'US Dollar' },
-    { code: 'HKD', symbol: 'HK$', name: 'Hong Kong Dollar' },
+    { code: 'HKD', symbol: '$', name: 'Hong Kong Dollar' },
     { code: 'CNY', symbol: '¥', name: 'Chinese Yuan' },
   ];
 

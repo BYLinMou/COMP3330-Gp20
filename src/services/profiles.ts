@@ -3,12 +3,15 @@ import { supabase } from './supabase';
 export interface Profile {
   id: string;
   created_at: string;
+  username: string | null;
+  primary_currency: string | null;
+  income: number | null;
 }
 
 /**
  * Get the current user's profile
  */
-export async function getProfile() {
+export async function getProfile(): Promise<Profile> {
   try {
     const { data: { user } } = await supabase.auth.getUser();
     
@@ -39,11 +42,17 @@ export async function getProfile() {
   }
 }
 
+export type ProfileUpdateInput = {
+  username?: string | null;
+  primary_currency?: string | null;
+  income?: number | null;
+};
+
 /**
  * Create a profile for a new user
  * This should typically be called after user signs up
  */
-export async function createProfile() {
+export async function createProfile(updates?: ProfileUpdateInput): Promise<Profile> {
   try {
     const { data: { user } } = await supabase.auth.getUser();
     
@@ -59,16 +68,24 @@ export async function createProfile() {
       .single();
 
     if (existingProfile) {
+      // If already exists and caller provided updates, apply them
+      if (updates && (updates.username !== undefined || updates.primary_currency !== undefined)) {
+        return await updateProfile(updates);
+      }
       return existingProfile as Profile;
+    }
+
+    // Only include provided fields to avoid overwriting DB defaults
+    const payload: Record<string, any> = { id: user.id };
+    if (updates) {
+      if (updates.username !== undefined) payload.username = updates.username;
+      if (updates.primary_currency !== undefined) payload.primary_currency = updates.primary_currency;
+      if (updates.income !== undefined) payload.income = updates.income;
     }
 
     const { data, error } = await supabase
       .from('profiles')
-      .insert([
-        {
-          id: user.id,
-        }
-      ])
+      .insert([payload])
       .select()
       .single();
 
@@ -85,10 +102,51 @@ export async function createProfile() {
 }
 
 /**
+ * Update current user's profile fields
+ */
+export async function updateProfile(updates: ProfileUpdateInput): Promise<Profile> {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    
+    if (!user) {
+      throw new Error('User not authenticated');
+    }
+
+    // Only include fields that are explicitly provided
+    const payload: Record<string, any> = {};
+    if (updates.username !== undefined) payload.username = updates.username;
+    if (updates.primary_currency !== undefined) payload.primary_currency = updates.primary_currency;
+    if (updates.income !== undefined) payload.income = updates.income;
+
+    if (Object.keys(payload).length === 0) {
+      // Nothing to update; return current profile
+      return await getProfile();
+    }
+
+    const { data, error } = await supabase
+      .from('profiles')
+      .update(payload)
+      .eq('id', user.id)
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Error updating profile:', error);
+      throw error;
+    }
+
+    return data as Profile;
+  } catch (error) {
+    console.error('Failed to update profile:', error);
+    throw error;
+  }
+}
+
+/**
  * Initialize a complete user account with profile, default categories, pet, etc.
  * Call this after successful sign up
  */
-export async function initializeUserAccount() {
+export async function initializeUserAccount(options?: ProfileUpdateInput) {
   try {
     const { data: { user } } = await supabase.auth.getUser();
     
@@ -97,7 +155,7 @@ export async function initializeUserAccount() {
     }
 
     // Create profile (will skip if already exists)
-    const profile = await createProfile();
+    const profile = await createProfile(options);
 
     // Check if categories already exist
     const { data: existingCategories } = await supabase
