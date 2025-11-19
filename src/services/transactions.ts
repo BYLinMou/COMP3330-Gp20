@@ -367,8 +367,111 @@ export async function deleteTransaction(id: string) {
 }
 
 /**
- * Get all categories for the current user
+ * Get all transactions for the current user
  */
+export async function getAllTransactions() {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    
+    if (!user) {
+      throw new Error('User not authenticated');
+    }
+
+    const { data, error } = await supabase
+      .from('transactions')
+      .select(`
+        *,
+        category:categories(*)
+      `)
+      .eq('user_id', user.id)
+      .order('occurred_at', { ascending: false });
+
+    if (error) {
+      console.error('Error fetching all transactions:', error);
+      throw error;
+    }
+
+    return data as Transaction[];
+  } catch (error) {
+    console.error('Failed to fetch all transactions:', error);
+    throw error;
+  }
+}
+
+export type TransactionFilter = {
+  type?: 'all' | 'income' | 'expense';
+  searchQuery?: string;
+  startDate?: string;
+  endDate?: string;
+  categoryId?: string;
+};
+
+/**
+ * Filter transactions based on criteria
+ */
+export function filterTransactions(
+  transactions: Transaction[],
+  filter: TransactionFilter
+): Transaction[] {
+  let filtered = [...transactions];
+
+  // Apply type filter
+  if (filter.type && filter.type !== 'all') {
+    if (filter.type === 'income') {
+      filtered = filtered.filter((t) => t.amount > 0);
+    } else if (filter.type === 'expense') {
+      filtered = filtered.filter((t) => t.amount < 0);
+    }
+  }
+
+  // Apply search query
+  if (filter.searchQuery && filter.searchQuery.trim()) {
+    const query = filter.searchQuery.toLowerCase();
+    filtered = filtered.filter(
+      (t) =>
+        t.merchant?.toLowerCase().includes(query) ||
+        t.category?.name?.toLowerCase().includes(query) ||
+        t.note?.toLowerCase().includes(query)
+    );
+  }
+
+  // Apply date range filter
+  if (filter.startDate) {
+    filtered = filtered.filter((t) => t.occurred_at >= filter.startDate!);
+  }
+  if (filter.endDate) {
+    filtered = filtered.filter((t) => t.occurred_at <= filter.endDate!);
+  }
+
+  // Apply category filter
+  if (filter.categoryId) {
+    filtered = filtered.filter((t) => t.category_id === filter.categoryId);
+  }
+
+  return filtered;
+}
+
+/**
+ * Get transaction statistics
+ */
+export function getTransactionStats(transactions: Transaction[]) {
+  const income = transactions
+    .filter((t) => t.amount > 0)
+    .reduce((sum, t) => sum + t.amount, 0);
+
+  const expense = Math.abs(
+    transactions
+      .filter((t) => t.amount < 0)
+      .reduce((sum, t) => sum + t.amount, 0)
+  );
+
+  return {
+    totalIncome: income,
+    totalExpense: expense,
+    balance: income - expense,
+    count: transactions.length,
+  };
+}
 
 /**
  * Get current budget

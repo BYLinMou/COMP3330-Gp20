@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, Dimensions, ActivityIndicator, TouchableOpacity
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
 import { Colors } from '../../constants/theme';
 import { RefreshableScrollView } from '../../components/refreshable-scroll-view';
 import { 
@@ -37,6 +38,7 @@ function getRelativeTime(dateString: string): string {
 
 export default function HomeScreen() {
   const { session } = useAuth();
+  const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [recentTransactions, setRecentTransactions] = useState<Transaction[]>([]);
@@ -433,6 +435,49 @@ export default function HomeScreen() {
             <Ionicons name="alert-circle" size={16} color={Colors.error} />
             <Text style={styles.warningText}>You're close to your budget limit!</Text>
           </View>
+        </Animated.View>
+        )}
+
+        {/* View All Transactions Card */}
+        {!isFlipped && showCardContent && (
+        <Animated.View
+          style={[
+            styles.card,
+            {
+              transform: [
+                {
+                  translateY: cardSlideAnim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [50, 0],
+                  }),
+                },
+              ],
+              opacity: cardSlideAnim.interpolate({
+                inputRange: [0, 1],
+                outputRange: [0, 1],
+              }),
+            },
+          ]}
+        >
+          <TouchableOpacity
+            style={styles.viewAllTransactionsCard}
+            onPress={() => {
+              // @ts-ignore - Expo Router navigation
+              router.push('/all-transactions');
+            }}
+            activeOpacity={0.7}
+          >
+            <View style={styles.viewAllTransactionsLeft}>
+              <Ionicons name="list-outline" size={28} color={Colors.primary} />
+              <View style={styles.viewAllTransactionsText}>
+                <Text style={styles.viewAllTransactionsTitle}>View All Transactions</Text>
+                <Text style={styles.viewAllTransactionsSubtitle}>
+                  Search and filter your transactions
+                </Text>
+              </View>
+            </View>
+            <Ionicons name="chevron-forward" size={24} color={Colors.primary} />
+          </TouchableOpacity>
         </Animated.View>
         )}
 
@@ -836,6 +881,31 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: Colors.textPrimary,
     marginBottom: 12,
+  },
+  viewAllTransactionsCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 16,
+  },
+  viewAllTransactionsLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    flex: 1,
+  },
+  viewAllTransactionsText: {
+    flex: 1,
+  },
+  viewAllTransactionsTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: Colors.textPrimary,
+    marginBottom: 4,
+  },
+  viewAllTransactionsSubtitle: {
+    fontSize: 13,
+    color: Colors.textSecondary,
   },
   badge: {
     backgroundColor: Colors.error,
