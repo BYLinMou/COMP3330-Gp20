@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Dimensions, ActivityIndicator } from 'react-native';
+import type { LayoutChangeEvent } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../constants/theme';
 import { RefreshableScrollView } from '../../components/refreshable-scroll-view';
@@ -17,14 +17,26 @@ import {
   type WeeklySpending,
 } from '../../src/services/reports';
 import { useAuth } from '../../src/providers/AuthProvider';
+import { PieChart } from 'react-native-chart-kit';
+import Svg, { Path, Circle } from 'react-native-svg';
 
 const { width } = Dimensions.get('window');
+const CHART_HEIGHT = 160;
+const VERTICAL_PADDING_BOTTOM = 10; // 20% of 160
 
-type TabType = 'trends' | 'compare' | 'merchants' | 'search' | 'breakdown' | 'weekly';
+type TabType = 'trends' | 'compare' | 'merchants' | 'search' | 'breakdown';
+type PeriodType = 'month' | 'week';
+
+type ChartPoint = {
+  x: number;
+  y: number;
+  key: string;
+};
 
 export default function ReportsScreen() {
   const { session } = useAuth();
   const [activeTab, setActiveTab] = useState<TabType>('trends');
+  const [period, setPeriod] = useState<PeriodType>('month');
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [spendingData, setSpendingData] = useState<Array<{
@@ -37,14 +49,77 @@ export default function ReportsScreen() {
   const [totalSpent, setTotalSpent] = useState(0);
   const [monthlyTrends, setMonthlyTrends] = useState<MonthlyTrend[]>([]);
   const [weeklyData, setWeeklyData] = useState<WeeklySpending[]>([]);
+  const [chartWidth, setChartWidth] = useState(0);
 
   // Calculate maxValue from monthlyTrends dynamically
-  const maxValue = monthlyTrends.length > 0 
+  const rawMax = monthlyTrends.length > 0 
     ? Math.max(
         ...monthlyTrends.map(t => t.actualSpending),
         ...monthlyTrends.map(t => t.budgetTarget)
       ) 
     : 2200;
+  
+  // Add 20% headroom so the chart doesn't touch the top
+  const maxValue = rawMax * 1.2;
+
+  const yAxisLabels = useMemo(() => {
+    const safeMax = maxValue || 1;
+    const step = safeMax / 4;
+    return [4, 3, 2, 1, 0].map((multiplier) => Math.round(step * multiplier));
+  }, [maxValue]);
+
+  const trendPoints = useMemo(() => {
+    if (!chartWidth || monthlyTrends.length === 0) {
+      return { actual: [] as ChartPoint[], budget: [] as ChartPoint[] };
+    }
+
+    const length = monthlyTrends.length;
+    // Add horizontal padding so points aren't on the very edge
+    const paddingX = 16;
+    const availableWidth = chartWidth - (paddingX * 2);
+    const availableHeight = CHART_HEIGHT - VERTICAL_PADDING_BOTTOM;
+    const step = length > 1 ? availableWidth / (length - 1) : 0;
+
+    const actual: ChartPoint[] = [];
+    const budget: ChartPoint[] = [];
+
+    monthlyTrends.forEach((trend, index) => {
+      const x = length === 1 ? chartWidth / 2 : paddingX + (index * step);
+      const actualHeight = (trend.actualSpending / (maxValue || 1)) * availableHeight;
+      const budgetHeight = (trend.budgetTarget / (maxValue || 1)) * availableHeight;
+
+      actual.push({
+        x,
+        y: availableHeight - actualHeight,
+        key: `${trend.month}-${trend.year}-actual`,
+      });
+
+      budget.push({
+        x,
+        y: availableHeight - budgetHeight,
+        key: `${trend.month}-${trend.year}-budget`,
+      });
+    });
+
+    return { actual, budget };
+  }, [chartWidth, monthlyTrends, maxValue]);
+
+  const buildPath = useCallback((points: ChartPoint[]) => {
+    if (!points.length) return '';
+    return points
+      .map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x} ${point.y}`)
+      .join(' ');
+  }, []);
+
+  const actualPath = useMemo(() => buildPath(trendPoints.actual), [buildPath, trendPoints.actual]);
+  const budgetPath = useMemo(() => buildPath(trendPoints.budget), [buildPath, trendPoints.budget]);
+
+  const handleChartLayout = useCallback((event: LayoutChangeEvent) => {
+    const nextWidth = event.nativeEvent.layout.width;
+    if (Math.abs(chartWidth - nextWidth) > 1) {
+      setChartWidth(nextWidth);
+    }
+  }, [chartWidth]);
 
   // Category color mapping
   const categoryColors: Record<string, string> = {
@@ -60,18 +135,30 @@ export default function ReportsScreen() {
     if (session) {
       loadAllData();
     }
-  }, [session]);
+  }, [session, period]);
 
   async function loadAllData() {
     try {
       setLoading(true);
       
-      // Get current month date range
+      // Get date range based on selected period
       const now = new Date();
-      const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
-      const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-      const startDate = firstDay.toISOString().split('T')[0];
-      const endDate = lastDay.toISOString().split('T')[0];
+      let startDate: string;
+      let endDate: string;
+
+      if (period === 'week') {
+        // Get current week (last 7 days)
+        const weekAgo = new Date(now);
+        weekAgo.setDate(now.getDate() - 6);
+        startDate = weekAgo.toISOString().split('T')[0];
+        endDate = now.toISOString().split('T')[0];
+      } else {
+        // Get current month
+        const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
+        const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+        startDate = firstDay.toISOString().split('T')[0];
+        endDate = lastDay.toISOString().split('T')[0];
+      }
 
       // Load all data in parallel
       const [summary, breakdown, trends, weekly] = await Promise.all([
@@ -87,12 +174,25 @@ export default function ReportsScreen() {
 
       // Update breakdown
       const total = Object.values(breakdown).reduce<number>((sum, val) => sum + (val as number), 0);
-      const chartData = Object.entries(breakdown).map(([category, amount]) => ({
-        category,
-        amount: amount as number,
-        color: categoryColors[category] || Colors.chartPurple,
-        percentage: Math.round(((amount as number) / total) * 100),
-      }));
+      const fallbackColors = [
+        Colors.chartPurple,
+        Colors.chartCyan,
+        Colors.chartOrange,
+        Colors.chartRed,
+        Colors.chartGreen,
+      ];
+
+      const chartData = Object.entries(breakdown).map(([category, amount], index) => {
+        const explicitColor = categoryColors[category];
+        const fallbackColor = fallbackColors[index % fallbackColors.length];
+
+        return {
+          category,
+          amount: amount as number,
+          color: explicitColor ?? fallbackColor,
+          percentage: Math.round(((amount as number) / total) * 100),
+        };
+      });
       setSpendingData(chartData);
 
       // Update trends
@@ -163,14 +263,6 @@ export default function ReportsScreen() {
             </Text>
           </TouchableOpacity>
           <TouchableOpacity
-            style={[styles.tab, activeTab === 'weekly' && styles.tabActive]}
-            onPress={() => setActiveTab('weekly')}
-          >
-            <Text style={[styles.tabText, activeTab === 'weekly' && styles.tabTextActive]}>
-              Weekly
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
             style={[styles.tab, activeTab === 'compare' && styles.tabActive]}
             onPress={() => setActiveTab('compare')}
           >
@@ -189,15 +281,15 @@ export default function ReportsScreen() {
             <View style={styles.chartContainer}>
               {/* Y-axis labels */}
               <View style={styles.yAxisLabels}>
-                <Text style={styles.yAxisLabel}>2200</Text>
-                <Text style={styles.yAxisLabel}>1650</Text>
-                <Text style={styles.yAxisLabel}>1100</Text>
-                <Text style={styles.yAxisLabel}>550</Text>
-                <Text style={styles.yAxisLabel}>0</Text>
+                {yAxisLabels.map((label, index) => (
+                  <Text key={`y-axis-${index}`} style={styles.yAxisLabel}>
+                    {label}
+                  </Text>
+                ))}
               </View>
 
               {/* Chart area */}
-              <View style={styles.chartArea}>
+              <View style={styles.chartArea} onLayout={handleChartLayout}>
                 {/* Grid lines */}
                 <View style={styles.gridLines}>
                   {[0, 1, 2, 3, 4].map((i) => (
@@ -211,33 +303,56 @@ export default function ReportsScreen() {
                   </View>
                 ) : (
                   <>
-                    {/* Data points and lines */}
-                    <View style={styles.dataContainer}>
-                      {monthlyTrends.map((trend, index) => {
-                        const actualHeight = (trend.actualSpending / maxValue) * 140;
-                        const budgetHeight = (trend.budgetTarget / maxValue) * 140;
+                    <View style={styles.chartCanvas}>
+                      {chartWidth > 0 && (
+                        <Svg width={chartWidth} height={CHART_HEIGHT}>
+                          {budgetPath && (
+                            <Path
+                              d={budgetPath}
+                              stroke={Colors.chartCyan}
+                              strokeWidth={2}
+                              fill="none"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            />
+                          )}
 
-                        return (
-                          <View key={`${trend.month}-${trend.year}`} style={styles.dataColumn}>
-                            {/* Budget line point */}
-                            <View
-                              style={[
-                                styles.dataPoint,
-                                styles.budgetPoint,
-                                { bottom: budgetHeight },
-                              ]}
+                          {actualPath && (
+                            <Path
+                              d={actualPath}
+                              stroke={Colors.chartPurple}
+                              strokeWidth={2}
+                              fill="none"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
                             />
-                            {/* Actual line point */}
-                            <View
-                              style={[
-                                styles.dataPoint,
-                                styles.actualPoint,
-                                { bottom: actualHeight },
-                              ]}
+                          )}
+
+                          {trendPoints.budget.map((point) => (
+                            <Circle
+                              key={point.key}
+                              cx={point.x}
+                              cy={point.y}
+                              r={4.5}
+                              stroke={Colors.chartCyan}
+                              strokeWidth={2}
+                              fill={Colors.white}
                             />
-                          </View>
-                        );
-                      })}
+                          ))}
+
+                          {trendPoints.actual.map((point) => (
+                            <Circle
+                              key={point.key}
+                              cx={point.x}
+                              cy={point.y}
+                              r={4.5}
+                              stroke={Colors.chartPurple}
+                              strokeWidth={2}
+                              fill={Colors.white}
+                            />
+                          ))}
+                        </Svg>
+                      )}
                     </View>
 
                     {/* X-axis labels */}
@@ -278,7 +393,40 @@ export default function ReportsScreen() {
         {/* Breakdown Tab */}
         {activeTab === 'breakdown' && (
           <View style={styles.card}>
-            <Text style={styles.cardTitle}>Spending Breakdown</Text>
+            <View style={styles.headerRow}>
+              <View>
+                <Text style={styles.cardTitle}>Analysis</Text>
+                <Text style={styles.cardSubtitle}>
+                  Income ${totalIncome.toFixed(2)}
+                </Text>
+              </View>
+              
+              {/* Period Filter */}
+              <View style={styles.periodFilter}>
+                <TouchableOpacity
+                  style={[styles.periodButton, period === 'month' && styles.periodButtonActive]}
+                  onPress={() => setPeriod('month')}
+                >
+                  <Text style={[styles.periodButtonText, period === 'month' && styles.periodButtonTextActive]}>
+                    Monthly
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.periodButton, period === 'week' && styles.periodButtonActive]}
+                  onPress={() => setPeriod('week')}
+                >
+                  <Text style={[styles.periodButtonText, period === 'week' && styles.periodButtonTextActive]}>
+                    Weekly
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.periodButton}
+                  onPress={() => {/* TODO: Add year filter */}}
+                >
+                  <Text style={styles.periodButtonText}>Yearly</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
             
             {loading ? (
               <View style={styles.loadingContainer}>
@@ -287,95 +435,82 @@ export default function ReportsScreen() {
             ) : spendingData.length === 0 ? (
               <View style={styles.emptyContainer}>
                 <Ionicons name="pie-chart-outline" size={48} color={Colors.textSecondary} />
-                <Text style={styles.emptyText}>No spending data yet</Text>
+                <Text style={styles.emptyText}>暂无支出数据</Text>
               </View>
             ) : (
               <>
-                {/* Donut Chart */}
-                <View style={styles.chartContainerBreakdown}>
-                  <View style={styles.donutChart}>
-                    {spendingData.map((item, index) => {
-                      const totalDegrees = spendingData.reduce((sum, d) => sum + (d.percentage * 3.6), 0);
-                      let startDegree = 0;
-                      for (let i = 0; i < index; i++) {
-                        startDegree += spendingData[i].percentage * 3.6;
-                      }
-                      return (
-                        <View
-                          key={item.category}
-                          style={[
-                            styles.chartSegment,
-                            {
-                              backgroundColor: item.color,
-                              transform: [
-                                { rotate: `${startDegree}deg` },
-                              ],
-                            },
-                          ]}
-                        />
-                      );
-                    })}
-                    <View style={styles.donutHole} />
+                {/* Spending Summary with Pie Chart */}
+                <View style={styles.spendingSummary}>
+                  <View style={styles.summaryHeader}>
+                    <Text style={styles.summaryTitle}>Total Expense</Text>
+                    <Text style={styles.summaryTotal}>${totalSpent.toFixed(2)}</Text>
+                  </View>
+
+                  {/* Pie Chart for breakdown */}
+                  <View style={styles.pieChartContainer}>
+                    <PieChart
+                      data={spendingData.map((item) => ({
+                        name: item.category,
+                        amount: item.amount,
+                        color: item.color,
+                        legendFontColor: Colors.textSecondary,
+                        legendFontSize: 12,
+                      }))}
+                      width={width - 80}
+                      height={220}
+                      chartConfig={{
+                        backgroundGradientFrom: '#ffffff',
+                        backgroundGradientTo: '#ffffff',
+                        color: () => Colors.textPrimary,
+                        labelColor: () => Colors.textSecondary,
+                      }}
+                      accessor="amount"
+                      backgroundColor="transparent"
+                      paddingLeft={((width - 80) / 4).toString()} // 动态计算 paddingLeft 为宽度的 1/4 以实现居中
+                      center={[0, 0]}
+                      hasLegend={false}
+                      absolute={false}
+                    />
+                  </View>
+
+                  {/* Horizontal stacked bar 作为额外视觉辅助 */}
+                  <View style={styles.stackedBar}>
+                    {spendingData.map((item) => (
+                      <View
+                        key={item.category}
+                        style={[
+                          styles.stackedBarSegment,
+                          {
+                            backgroundColor: item.color,
+                            width: `${item.percentage}%`,
+                          },
+                        ]}
+                      />
+                    ))}
                   </View>
                 </View>
 
-                {/* Legend */}
-                <View style={styles.breakdownLegend}>
-                  <View style={styles.legendColumn}>
-                    {spendingData.slice(0, Math.ceil(spendingData.length / 2)).map((item) => (
-                      <View key={item.category} style={styles.legendItem}>
-                        <View style={[styles.legendDot, { backgroundColor: item.color }]} />
-                        <Text style={styles.legendLabel}>{item.category}</Text>
-                        <Text style={styles.legendAmount}>${item.amount.toFixed(2)}</Text>
+                {/* Category List */}
+                <View style={styles.categoryList}>
+                  {spendingData.map((item) => (
+                    <View key={item.category} style={styles.categoryItem}>
+                      <View style={styles.categoryLeft}>
+                        <View style={[styles.categoryColor, { backgroundColor: item.color }]} />
+                        <View style={styles.categoryInfo}>
+                          <Text style={styles.categoryName}>{item.category}</Text>
+                          <Text style={styles.categoryPercentage}>{item.percentage}%</Text>
+                        </View>
                       </View>
-                    ))}
-                  </View>
-                  <View style={styles.legendColumn}>
-                    {spendingData.slice(Math.ceil(spendingData.length / 2)).map((item) => (
-                      <View key={item.category} style={styles.legendItem}>
-                        <View style={[styles.legendDot, { backgroundColor: item.color }]} />
-                        <Text style={styles.legendLabel}>{item.category}</Text>
-                        <Text style={styles.legendAmount}>${item.amount.toFixed(2)}</Text>
-                      </View>
-                    ))}
-                  </View>
+                      <Text style={styles.categoryAmount}>$ {item.amount.toFixed(2)}</Text>
+                    </View>
+                  ))}
                 </View>
               </>
             )}
           </View>
         )}
 
-        {/* Weekly Tab */}
-        {activeTab === 'weekly' && (
-          <View style={styles.card}>
-            <Text style={styles.cardTitle}>This Week</Text>
-            <Text style={styles.cardSubtitle}>Daily spending breakdown</Text>
-            {loading || weeklyData.length === 0 ? (
-              <View style={styles.loadingContainer}>
-                <ActivityIndicator size="large" color={Colors.primary} />
-              </View>
-            ) : (
-              <View style={styles.weekChart}>
-                {weeklyData.map((dayData) => {
-                  const maxWeeklyAmount = Math.max(...weeklyData.map(d => d.amount), 100);
-                  const height = (dayData.amount / maxWeeklyAmount) * 100;
-                  return (
-                    <View key={dayData.day} style={styles.barContainer}>
-                      <View style={styles.barWrapper}>
-                        <View style={[styles.bar, { height: Math.max(height, 5) }]}>
-                          {dayData.amount > 0 && (
-                            <Text style={styles.barAmount}>${dayData.amount.toFixed(0)}</Text>
-                          )}
-                        </View>
-                      </View>
-                      <Text style={styles.barLabel}>{dayData.day}</Text>
-                    </View>
-                  );
-                })}
-              </View>
-            )}
-          </View>
-        )}
+        {/* Weekly Tab - REMOVED */}
 
         <View style={{ height: 20 }} />
       </RefreshableScrollView>
@@ -491,8 +626,10 @@ const styles = StyleSheet.create({
   },
   yAxisLabels: {
     width: 40,
+    height: CHART_HEIGHT,
     justifyContent: 'space-between',
     paddingRight: 8,
+    paddingBottom: VERTICAL_PADDING_BOTTOM,
   },
   yAxisLabel: {
     fontSize: 11,
@@ -508,38 +645,16 @@ const styles = StyleSheet.create({
     top: 0,
     left: 0,
     right: 0,
-    height: 160,
+    height: CHART_HEIGHT,
     justifyContent: 'space-between',
+    paddingBottom: VERTICAL_PADDING_BOTTOM,
   },
   gridLine: {
     height: 1,
     backgroundColor: Colors.gray200,
   },
-  dataContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    height: 160,
-    position: 'relative',
-  },
-  dataColumn: {
-    flex: 1,
-    position: 'relative',
-  },
-  dataPoint: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    position: 'absolute',
-    left: '50%',
-    marginLeft: -5,
-    borderWidth: 2,
-    backgroundColor: Colors.white,
-  },
-  actualPoint: {
-    borderColor: Colors.chartPurple,
-  },
-  budgetPoint: {
-    borderColor: Colors.chartCyan,
+  chartCanvas: {
+    height: CHART_HEIGHT,
   },
   xAxisLabels: {
     flexDirection: 'row',
@@ -572,85 +687,113 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: Colors.textSecondary,
   },
-  // Breakdown tab styles
-  chartContainerBreakdown: {
-    alignItems: 'center',
+  // Header row with filter
+  headerRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
     marginBottom: 24,
   },
-  donutChart: {
-    width: 180,
-    height: 180,
-    borderRadius: 90,
-    position: 'relative',
-    overflow: 'hidden',
+  periodFilter: {
+    flexDirection: 'row',
+    backgroundColor: Colors.gray100,
+    borderRadius: 8,
+    padding: 2,
+    gap: 2,
   },
-  chartSegment: {
-    position: 'absolute',
-    width: '100%',
-    height: '100%',
-    borderRadius: 90,
+  periodButton: {
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 6,
   },
-  donutHole: {
-    position: 'absolute',
-    width: 100,
-    height: 100,
-    borderRadius: 50,
+  periodButtonActive: {
     backgroundColor: Colors.white,
-    top: 40,
-    left: 40,
+    shadowColor: Colors.black,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 1,
   },
-  breakdownLegend: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  legendColumn: {
-    flex: 1,
-    gap: 12,
-  },
-  legendLabel: {
-    flex: 1,
-    fontSize: 14,
-    color: Colors.textPrimary,
-  },
-  legendAmount: {
-    fontSize: 14,
+  periodButtonText: {
+    fontSize: 12,
     fontWeight: '600',
+    color: Colors.textSecondary,
+  },
+  periodButtonTextActive: {
     color: Colors.textPrimary,
   },
-  // Weekly tab styles
-  weekChart: {
+  // Breakdown tab styles - Summary and Stacked Bar
+  spendingSummary: {
+    marginBottom: 24,
+  },
+  summaryHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'flex-end',
-    height: 120,
+    alignItems: 'baseline',
+    marginBottom: 16,
   },
-  barContainer: {
-    flex: 1,
-    alignItems: 'center',
+  summaryTitle: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: Colors.textSecondary,
+  },
+  summaryTotal: {
+    fontSize: 28,
+    fontWeight: '700',
+    color: Colors.textPrimary,
+  },
+  stackedBar: {
+    flexDirection: 'row',
+    height: 8,
+    borderRadius: 4,
+    overflow: 'hidden',
+    backgroundColor: Colors.gray200,
+  },
+  stackedBarSegment: {
+    height: '100%',
+  },
+  // Category list
+  categoryList: {
     gap: 8,
   },
-  barWrapper: {
+  categoryItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 16,
+    paddingHorizontal: 4,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.gray100,
+  },
+  categoryLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
     flex: 1,
-    width: '100%',
-    justifyContent: 'flex-end',
-    alignItems: 'center',
   },
-  bar: {
-    width: 28,
-    backgroundColor: Colors.primary,
-    borderRadius: 4,
-    alignItems: 'center',
-    justifyContent: 'flex-start',
-    paddingTop: 4,
+  categoryColor: {
+    width: 32,
+    height: 32,
+    borderRadius: 6,
   },
-  barAmount: {
-    fontSize: 9,
+  categoryInfo: {
+    flex: 1,
+  },
+  categoryName: {
+    fontSize: 15,
+    fontWeight: '500',
+    color: Colors.textPrimary,
+    marginBottom: 2,
+  },
+  categoryPercentage: {
+    fontSize: 12,
     fontWeight: '600',
-    color: Colors.white,
-  },
-  barLabel: {
-    fontSize: 11,
     color: Colors.textSecondary,
+  },
+  categoryAmount: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: Colors.textPrimary,
   },
   chartPlaceholder: {
     flex: 1,
@@ -677,5 +820,9 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: Colors.textSecondary,
     marginTop: 12,
+  },
+  pieChartContainer: {
+    alignItems: 'center',
+    marginBottom: 16,
   },
 });

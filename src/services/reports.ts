@@ -1,6 +1,6 @@
 import { supabase } from './supabase';
 import type { Transaction } from './transactions';
-import { getMonthlyBudgetAmount } from './budgets';
+import { getAllBudgets, getMonthlyBudgetAmount, type Budget } from './budgets';
 import { getProfile } from './profiles';
 
 export interface MonthlyTrend {
@@ -40,8 +40,26 @@ export async function getMonthlyTrends(monthsCount: number = 6): Promise<Monthly
       throw new Error('User not authenticated');
     }
 
-    // Get monthly budget amount
-    const monthlyBudget = await getMonthlyBudgetAmount();
+    // Get budgets configured by user for month-level targeting
+    const userBudgets = await getAllBudgets();
+    const sortedBudgets = [...userBudgets].sort((a, b) => a.start_date.localeCompare(b.start_date));
+
+    const convertBudgetToMonthly = (budget: Budget) =>
+      budget.period === 'monthly' ? budget.amount : budget.amount / 12;
+
+    const defaultBudget = sortedBudgets.length > 0
+      ? convertBudgetToMonthly(sortedBudgets[sortedBudgets.length - 1])
+      : await getMonthlyBudgetAmount();
+
+    const findBudgetForMonth = (date: Date) => {
+      for (let i = sortedBudgets.length - 1; i >= 0; i -= 1) {
+        const budgetDate = new Date(`${sortedBudgets[i].start_date}T00:00:00`);
+        if (budgetDate <= date) {
+          return convertBudgetToMonthly(sortedBudgets[i]);
+        }
+      }
+      return defaultBudget;
+    };
 
     // Calculate date range
     const endDate = new Date();
@@ -87,7 +105,7 @@ export async function getMonthlyTrends(monthsCount: number = 6): Promise<Monthly
         month: months[targetDate.getMonth()],
         year: targetDate.getFullYear(),
         actualSpending: monthlyData[key] || 0,
-        budgetTarget: monthlyBudget,
+        budgetTarget: findBudgetForMonth(targetDate),
       });
     }
 

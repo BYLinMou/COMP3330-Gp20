@@ -318,30 +318,90 @@ export async function addTransaction(
 }
 
 /**
+ * Fields that can be updated in a transaction
+ */
+export interface TransactionUpdateInput {
+  amount?: number;
+  occurred_at?: string;
+  merchant?: string | null;
+  category_id?: string | null;
+  source?: 'manual' | 'ocr' | 'ai';
+  note?: string | null;
+  payment_method?: string | null;
+}
+
+/**
  * Update an existing transaction
+ * Supports updating all transaction fields including category, amount, merchant, etc.
+ * 
+ * @param id - Transaction ID to update
+ * @param updates - Fields to update (amount, occurred_at, merchant, category_id, note, payment_method, source)
+ * @returns Updated transaction with category information
+ * 
+ * @example
+ * ```typescript
+ * // Update transaction category and amount
+ * const updated = await updateTransaction('txn-123', {
+ *   category_id: 'cat-456',
+ *   amount: -50.00,
+ *   note: 'Updated expense'
+ * });
+ * ```
  */
 export async function updateTransaction(
   id: string,
-  updates: Partial<Omit<Transaction, 'id' | 'user_id' | 'created_at' | 'updated_at'>>
+  updates: TransactionUpdateInput
 ) {
   try {
+    // Validate input
+    if (!id) {
+      throw new Error('Transaction ID is required');
+    }
+
+    if (!updates || Object.keys(updates).length === 0) {
+      throw new Error('No updates provided');
+    }
+
+    // Validate amount if provided
+    if (updates.amount !== undefined && typeof updates.amount !== 'number') {
+      throw new Error('Amount must be a number');
+    }
+
+    // Validate occurred_at if provided
+    if (updates.occurred_at !== undefined && !updates.occurred_at) {
+      throw new Error('occurred_at cannot be empty');
+    }
+
+    // Validate source if provided
+    if (updates.source !== undefined && !['manual', 'ocr', 'ai'].includes(updates.source)) {
+      throw new Error('Invalid source value. Must be "manual", "ocr", or "ai"');
+    }
+
     const { data: { user } } = await supabase.auth.getUser();
     
     if (!user) {
       throw new Error('User not authenticated');
     }
 
+    // Update the transaction
     const { data, error } = await supabase
       .from('transactions')
       .update(updates)
       .eq('id', id)
       .eq('user_id', user.id)
-      .select()
+      .select(`
+        *,
+        category:categories(*)
+      `)
       .single();
 
     if (error) {
       console.error('Error updating transaction:', error);
       throw error;
+    }
+
+    if (!data) {
+      throw new Error('Transaction not found or you do not have permission to update it');
     }
 
     return data as Transaction;

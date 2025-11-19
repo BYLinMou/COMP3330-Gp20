@@ -12,9 +12,12 @@ export const Colors = {
   secondaryLight: '#60A5FA',
   
   // Gradient colors
-  gradientStart: '#7C3AED',
-  gradientEnd: '#3B82F6',
+  gradientStart: '#c28bf3b6',
+  gradientEnd: '#F9FAFB',
   
+  gradientStart1: '#cb94fbff',
+  gradientEnd1: '#a4cff8ff',
+
   // Status colors
   success: '#10B981',
   error: '#EF4444',

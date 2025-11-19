@@ -25,7 +25,38 @@ import {
   type Category,
 } from '../../src/services/categories';
 import { getCurrencies, type Currency } from '../../src/services/currencies';
-import { getCurrentBudget, updateCurrentBudget, type Budget } from '../../src/services/budgets';
+import { getAllBudgets, setBudget, type Budget } from '../../src/services/budgets';
+
+const MONTH_LABEL_OPTIONS: Intl.DateTimeFormatOptions = { month: 'long', year: 'numeric' };
+
+const getMonthStartKey = (date: Date) => {
+  const year = date.getFullYear();
+  const month = `${date.getMonth() + 1}`.padStart(2, '0');
+  return `${year}-${month}-01`;
+};
+
+const normalizeDateString = (value: string) => value.split('T')[0];
+
+const sortMonthKeysDesc = (a: string, b: string) => (a < b ? 1 : a > b ? -1 : 0);
+
+const formatBudgetMonth = (monthKey: string) => {
+  if (!monthKey) return '';
+  const parsed = new Date(`${monthKey}T00:00:00`);
+  if (Number.isNaN(parsed.getTime())) {
+    return monthKey;
+  }
+  return parsed.toLocaleDateString(undefined, MONTH_LABEL_OPTIONS);
+};
+
+const generateMonthKeyRange = (monthsBefore = 6, monthsAfter = 4) => {
+  const keys: string[] = [];
+  const today = new Date();
+  for (let offset = -monthsBefore; offset <= monthsAfter; offset += 1) {
+    const date = new Date(today.getFullYear(), today.getMonth() + offset, 1);
+    keys.push(getMonthStartKey(date));
+  }
+  return keys.sort(sortMonthKeysDesc);
+};
 import { getProfile, updateProfile } from '../../src/services/profiles';
 
 export default function SettingsScreen() {
@@ -37,9 +68,14 @@ export default function SettingsScreen() {
   const [email, setEmail] = useState('');
   const [currency, setCurrency] = useState('USD ($)');
   const [language, setLanguage] = useState('English');
-  const [monthlyBudget, setMonthlyBudget] = useState('2000');
+  const [monthlyBudget, setMonthlyBudget] = useState('');
   const [monthlyIncome, setMonthlyIncome] = useState('');
   const [refreshing, setRefreshing] = useState(false);
+  const [selectedBudgetMonth, setSelectedBudgetMonth] = useState(() => getMonthStartKey(new Date()));
+  const [budgetMonthOptions, setBudgetMonthOptions] = useState<string[]>(() => generateMonthKeyRange());
+  const [budgetEntries, setBudgetEntries] = useState<Budget[]>([]);
+  const [budgetsLoaded, setBudgetsLoaded] = useState(false);
+  const [showBudgetMonthModal, setShowBudgetMonthModal] = useState(false);
 
   const [budgetAlerts, setBudgetAlerts] = useState(true);
   const [dailyReminders, setDailyReminders] = useState(true);
@@ -80,9 +116,44 @@ export default function SettingsScreen() {
   const [currencyOptions, setCurrencyOptions] = useState<Currency[]>([]);
   const [selectedCurrency, setSelectedCurrency] = useState('USD');
   const [showCurrencyModal, setShowCurrencyModal] = useState(false);
+  const currencySymbol = React.useMemo(() => {
+    const currencyMatch = currencyOptions.find((c) => c.code === selectedCurrency);
+    return currencyMatch?.symbol || '$';
+  }, [currencyOptions, selectedCurrency]);
 
   // Collapsible section state - tracks which section is expanded, all collapsed by default
   const [expandedSection, setExpandedSection] = useState<string | null>(null);
+
+  const findBudgetForMonth = React.useCallback(
+    (monthKey: string) => budgetEntries.find((budget) => normalizeDateString(budget.start_date) === monthKey),
+    [budgetEntries]
+  );
+
+  const updateMonthOptions = React.useCallback((budgets: Budget[]) => {
+    const baseRange = generateMonthKeyRange();
+    const budgetMonths = budgets.map((budget) => normalizeDateString(budget.start_date));
+    const merged = Array.from(new Set([...baseRange, ...budgetMonths]));
+    merged.sort(sortMonthKeysDesc);
+    setBudgetMonthOptions(merged);
+  }, []);
+
+  const loadBudgetData = React.useCallback(async () => {
+    if (!session) {
+      setBudgetEntries([]);
+      setBudgetMonthOptions(generateMonthKeyRange());
+      setBudgetsLoaded(true);
+      return;
+    }
+    try {
+      const budgets = await getAllBudgets();
+      setBudgetEntries(budgets);
+      updateMonthOptions(budgets);
+    } catch (error) {
+      console.error('Failed to load budget list:', error);
+    } finally {
+      setBudgetsLoaded(true);
+    }
+  }, [session, updateMonthOptions]);
 
   // Handler to toggle section expansion
   const toggleSection = (sectionName: string) => {
@@ -142,9 +213,36 @@ export default function SettingsScreen() {
   useEffect(() => {
     loadOpenAIConfig();
     loadCurrencies();
-    loadBudget();
     loadProfile();
   }, []);
+
+  useEffect(() => {
+    loadBudgetData();
+  }, [loadBudgetData]);
+
+  useEffect(() => {
+    if (budgetMonthOptions.length === 0) {
+      return;
+    }
+    if (!budgetMonthOptions.includes(selectedBudgetMonth)) {
+      setSelectedBudgetMonth(budgetMonthOptions[0]);
+    }
+  }, [budgetMonthOptions, selectedBudgetMonth]);
+
+  useEffect(() => {
+    if (!budgetsLoaded) {
+      return;
+    }
+    const monthEntry = findBudgetForMonth(selectedBudgetMonth);
+    if (monthEntry) {
+      const monthlyAmount = monthEntry.period === 'monthly'
+        ? monthEntry.amount
+        : monthEntry.amount / 12;
+      setMonthlyBudget(monthlyAmount.toString());
+    } else if (selectedBudgetMonth) {
+      setMonthlyBudget('');
+    }
+  }, [budgetsLoaded, findBudgetForMonth, selectedBudgetMonth, budgetEntries]);
 
   // Focus effect: reload categories when navigating back to this screen
   useFocusEffect(
@@ -246,23 +344,12 @@ export default function SettingsScreen() {
     }
   };
 
-  const loadBudget = async () => {
-    try {
-      const budget = await getCurrentBudget();
-      if (budget) {
-        // If it's a monthly budget, use amount directly
-        // If it's yearly, divide by 12 for monthly display
-        const monthlyAmount = budget.period === 'monthly' 
-          ? budget.amount 
-          : budget.amount / 12;
-        setMonthlyBudget(monthlyAmount.toString());
-      }
-    } catch (error) {
-      console.error('Failed to load budget:', error);
-    }
-  };
-
   const handleSaveBudget = async () => {
+    if (!session) {
+      Alert.alert('Not signed in', 'Please sign in to update your budget.');
+      return;
+    }
+
     const amount = parseFloat(monthlyBudget);
     if (isNaN(amount) || amount <= 0) {
       Alert.alert('Invalid Budget', 'Please enter a valid budget amount');
@@ -270,8 +357,14 @@ export default function SettingsScreen() {
     }
 
     try {
-      await updateCurrentBudget(amount);
-      Alert.alert('Success', 'Budget updated successfully');
+      const savedBudget = await setBudget(amount, 'monthly', selectedBudgetMonth);
+      setBudgetEntries((prevBudgets) => {
+        const filtered = prevBudgets.filter((entry) => entry.id !== savedBudget.id);
+        const updated = [savedBudget, ...filtered];
+        updateMonthOptions(updated);
+        return updated;
+      });
+      Alert.alert('Success', `${formatBudgetMonth(selectedBudgetMonth)} budget updated successfully`);
     } catch (error) {
       console.error('Failed to save budget:', error);
       Alert.alert('Error', 'Failed to save budget. Please try again.');
@@ -425,7 +518,7 @@ export default function SettingsScreen() {
 
     try {
       console.log('[Settings] Starting to save config...');
-      const config: OpenAIConfig = {
+      const config: Omit<OpenAIConfig, 'userId'> = {
         apiUrl: openaiUrl,
         apiKey: openaiKey,
         receiptModel: receiptModel,
@@ -489,6 +582,8 @@ export default function SettingsScreen() {
             await loadCategories();
             // Reload currencies
             await loadCurrencies();
+            // Reload budgets
+            await loadBudgetData();
           } catch (error) {
             console.error('Error refreshing settings:', error);
           } finally {
@@ -567,9 +662,15 @@ export default function SettingsScreen() {
           <View style={styles.inputGroup}>
             <Text style={styles.inputLabel}>Monthly Budget</Text>
             <View style={styles.amountInput}>
-              <Text style={styles.currencySymbol}>
-                {currencyOptions.find(c => c.code === selectedCurrency)?.symbol || '$'}
-              </Text>
+              <TouchableOpacity
+                style={styles.monthChip}
+                onPress={() => setShowBudgetMonthModal(true)}
+              >
+                <Ionicons name="calendar-outline" size={16} color={Colors.primary} />
+                <Text style={styles.monthChipText}>{formatBudgetMonth(selectedBudgetMonth)}</Text>
+                <Ionicons name="chevron-down" size={16} color={Colors.textSecondary} />
+              </TouchableOpacity>
+              <Text style={styles.currencySymbol}>{currencySymbol}</Text>
               <TextInput
                 style={styles.amountField}
                 value={monthlyBudget}
@@ -583,9 +684,7 @@ export default function SettingsScreen() {
           <View style={styles.inputGroup}>
             <Text style={styles.inputLabel}>Monthly Income</Text>
             <View style={styles.amountInput}>
-              <Text style={styles.currencySymbol}>
-                {currencyOptions.find(c => c.code === selectedCurrency)?.symbol || '$'}
-              </Text>
+              <Text style={styles.currencySymbol}>{currencySymbol}</Text>
               <TextInput
                 style={styles.amountField}
                 value={monthlyIncome}
@@ -1374,6 +1473,66 @@ export default function SettingsScreen() {
         </View>
       </Modal>
 
+      {/* Budget Month Selection Modal */}
+      <Modal
+        visible={showBudgetMonthModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setShowBudgetMonthModal(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Select Budget Month</Text>
+              <TouchableOpacity onPress={() => setShowBudgetMonthModal(false)}>
+                <Ionicons name="close" size={24} color={Colors.textPrimary} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView style={styles.modalList}>
+              {budgetMonthOptions.map((monthKey) => {
+                const entry = findBudgetForMonth(monthKey);
+                const monthlyAmount = entry
+                  ? (entry.period === 'monthly' ? entry.amount : entry.amount / 12)
+                  : null;
+                return (
+                  <TouchableOpacity
+                    key={monthKey}
+                    style={[
+                      styles.modalItem,
+                      selectedBudgetMonth === monthKey && styles.modalItemSelected,
+                    ]}
+                    onPress={() => {
+                      setSelectedBudgetMonth(monthKey);
+                      setShowBudgetMonthModal(false);
+                    }}
+                  >
+                    <View>
+                      <Text
+                        style={[
+                          styles.modalItemText,
+                          selectedBudgetMonth === monthKey && styles.modalItemTextSelected,
+                        ]}
+                      >
+                        {formatBudgetMonth(monthKey)}
+                      </Text>
+                      <Text style={styles.currencySubtext}>
+                        {monthlyAmount != null
+                          ? `Set to ${currencySymbol}${monthlyAmount.toLocaleString()}`
+                          : 'No budget set yet'}
+                      </Text>
+                    </View>
+                    {selectedBudgetMonth === monthKey && (
+                      <Ionicons name="checkmark" size={20} color={Colors.primary} />
+                    )}
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
       {/* Currency Selection Modal */}
       <Modal
         visible={showCurrencyModal}
@@ -1532,6 +1691,21 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: Colors.textSecondary,
     marginRight: 8,
+  },
+  monthChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Colors.gray200,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    marginRight: 8,
+    gap: 6,
+  },
+  monthChipText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: Colors.textPrimary,
   },
   amountField: {
     flex: 1,

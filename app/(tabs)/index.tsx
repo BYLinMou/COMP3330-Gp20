@@ -306,7 +306,7 @@ export default function HomeScreen() {
               pointerEvents={isFlipped ? 'none' : 'auto'}
             >
               <LinearGradient
-                colors={[Colors.gradientStart, Colors.gradientEnd]}
+                colors={[Colors.gradientStart1, Colors.gradientEnd1]}
                 style={styles.balanceCard}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
@@ -354,7 +354,7 @@ export default function HomeScreen() {
               pointerEvents={isFlipped ? 'auto' : 'none'}
             >
               <LinearGradient
-                colors={[Colors.gradientEnd, Colors.gradientStart]}
+                colors={[Colors.gradientEnd1, Colors.gradientStart1]}
                 style={styles.balanceCard}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
@@ -443,10 +443,18 @@ export default function HomeScreen() {
           <View style={styles.progressBar}>
             <View style={[styles.progressFill, { width: `${budgetUsed}%` }]} />
           </View>
-          <View style={styles.warningContainer}>
-            <Ionicons name="alert-circle" size={16} color={Colors.error} />
-            <Text style={styles.warningText}>You're close to your budget limit!</Text>
-          </View>
+          {budgetUsed >= 80 && budgetUsed <= 100 && (
+            <View style={styles.warningContainer}>
+              <Ionicons name="alert-circle" size={16} color={Colors.error} />
+              <Text style={styles.warningText}>You're close to your budget limit!</Text>
+            </View>
+          )}
+          {budgetUsed > 100 && (
+            <View style={styles.warningContainer}>
+              <Ionicons name="alert-circle" size={16} color={Colors.error} />
+              <Text style={styles.warningText}>You have exceeded your budget!</Text>
+            </View>
+          )}
         </Animated.View>
         )}
 

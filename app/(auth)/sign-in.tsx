@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Alert, StyleSheet, Text, TextInput, TouchableOpacity, View, ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, TouchableWithoutFeedback, Keyboard } from 'react-native';
+import { Alert, StyleSheet, Text, TextInput, TouchableOpacity, View, ActivityIndicator, KeyboardAvoidingView, Platform, ScrollView, TouchableWithoutFeedback, Keyboard, Image } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Link } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -40,7 +40,11 @@ export default function SignIn() {
         style={styles.header}
       >
         <View style={styles.logoContainer}>
-          <Text style={styles.logoEmoji}>🐾</Text>
+          <Image 
+            source={require('../../assets/images/logo.jpg')} 
+            style={styles.logoImage}
+            resizeMode="contain"
+          />
         </View>
         <Text style={styles.appName}>AuraSpend</Text>
         <Text style={styles.subtitle}>Smart Budgeting Companion</Text>
@@ -176,13 +180,18 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   logoContainer: {
-    width: 80,
+    width: 76,
     height: 80,
-    borderRadius: 40,
+    borderRadius: 10,
     backgroundColor: 'rgba(255, 255, 255, 0.2)',
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 16,
+    overflow: 'hidden',
+  },
+  logoImage: {
+    width: '100%',
+    height: '100%',
   },
   logoEmoji: {
     fontSize: 40,
@@ -190,12 +199,12 @@ const styles = StyleSheet.create({
   appName: {
     fontSize: 36,
     fontWeight: 'bold',
-    color: Colors.white,
+    color: Colors.black,
     marginBottom: 8,
   },
   subtitle: {
     fontSize: 16,
-    color: Colors.white,
+    color: Colors.black,
     opacity: 0.9,
   },
   content: {
