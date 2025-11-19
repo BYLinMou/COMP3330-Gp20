@@ -97,6 +97,9 @@ export default function SettingsScreen() {
     } else {
       // Check if models are empty and no previously selected models
       if (availableModels.length === 0 && !receiptModel && !chatModel && !fallbackModel) {
+        console.log('[Settings] No models available, prompting user to fetch');
+        setShowModelSelection(true);
+        /*
         Alert.alert(
           'No Models Available',
           'You need to fetch the available models first. Would you like to fetch them now?',
@@ -114,6 +117,7 @@ export default function SettingsScreen() {
                   const models = await fetchOpenAIModels(openaiUrl, openaiKey);
                   setAvailableModels(models);
                   setShowModelSelection(true);
+                  console.log('[Settings] Models fetched successfully:', models.length);
                   Alert.alert('Success', `Found ${models.length} available models`);
                 } catch (error: any) {
                   Alert.alert('Connection Failed', error.message || 'Failed to fetch models');
@@ -124,7 +128,7 @@ export default function SettingsScreen() {
               },
             },
           ]
-        );
+        );*/
       } else {
         setShowModelSelection(true);
       }
@@ -318,22 +322,35 @@ export default function SettingsScreen() {
   };
 
   const handleSaveOpenAIConfig = async () => {
+    console.log('[Settings] Save button pressed');
+    console.log('[Settings] Current values:', {
+      openaiUrl,
+      hasApiKey: !!openaiKey,
+      receiptModel,
+      chatModel,
+      fallbackModel,
+    });
+
     if (!openaiUrl.trim() || !openaiKey.trim()) {
+      console.log('[Settings] Validation failed: Missing URL or Key');
       Alert.alert('Validation Error', 'Please enter both API URL and API Key');
       return;
     }
 
     if (!receiptModel) {
+      console.log('[Settings] Validation failed: Missing receipt model');
       Alert.alert('Validation Error', 'Please select a receipt model');
       return;
     }
 
     if (!chatModel) {
+      console.log('[Settings] Validation failed: Missing chat model');
       Alert.alert('Validation Error', 'Please select a chat model');
       return;
     }
 
     try {
+      console.log('[Settings] Starting to save config...');
       const config: OpenAIConfig = {
         apiUrl: openaiUrl,
         apiKey: openaiKey,
@@ -342,9 +359,17 @@ export default function SettingsScreen() {
         fallbackModel: fallbackModel,
       };
 
+      console.log('[Settings] Config object created:', {
+        ...config,
+        apiKey: '***HIDDEN***'
+      });
+
+      console.log('[Settings] Calling saveOpenAIConfig...');
       await saveOpenAIConfig(config);
+      console.log('[Settings] saveOpenAIConfig completed successfully');
       Alert.alert('Success', 'OpenAI configuration saved successfully!');
     } catch (error: any) {
+      console.error('[Settings] Error saving config:', error);
       Alert.alert('Error', error.message || 'Failed to save configuration');
     }
   };
