@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { TouchableOpacity, StyleSheet, View, Modal, TextInput, FlatList, Text, Alert, KeyboardAvoidingView, Platform } from 'react-native';
+import { TouchableOpacity, StyleSheet, View, Modal, TextInput, FlatList, Text, Alert, KeyboardAvoidingView, Platform, Keyboard } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -117,6 +117,20 @@ export default function FloatingChatButton({ onPress }: FloatingChatButtonProps)
       if (interval) clearInterval(interval);
     };
   }, [isLoading]);
+
+  // Add keyboard listener to scroll to bottom when keyboard shows
+  useEffect(() => {
+    const keyboardDidShowListener = Keyboard.addListener('keyboardDidShow', () => {
+      // Delay to ensure layout has adjusted
+      setTimeout(() => {
+        flatListRef.current?.scrollToEnd({ animated: true });
+      }, 100);
+    });
+
+    return () => {
+      keyboardDidShowListener?.remove();
+    };
+  }, []);
 
   const handlePress = () => {
     if (onPress) {
@@ -530,12 +544,13 @@ export default function FloatingChatButton({ onPress }: FloatingChatButtonProps)
         visible={modalVisible}
         onRequestClose={handleBackPress}
       >
+        <View style={styles.fixedOverlay} />
         <KeyboardAvoidingView 
           style={{ flex: 1 }} 
-          behavior="padding"
-          keyboardVerticalOffset={0}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
         >
-          <View style={styles.modalOverlay}>
+          <View style={styles.modalContentWrapper}>
             <View style={styles.modalContent}>
               <View style={styles.modalHeader}>
                 <Text style={styles.modalTitle}>Aura Assistant</Text>
@@ -553,9 +568,8 @@ export default function FloatingChatButton({ onPress }: FloatingChatButtonProps)
                   {item.isAIExplanation ? (
                     <View style={[styles.messageContainer, styles.aiMessage]}>
                       <Text style={[styles.messageText, styles.aiMessageText, { fontStyle: 'italic' }]}>
-                        💭 {/* Explanation */}
+                        💭 {item.text}
                       </Text>
-                      {renderMarkdownAsReactNative(item.text, Colors.textPrimary)}
                     </View>
                   ) : item.isToolCall ? (
                     <View style={styles.toolCallContainer}>
@@ -735,9 +749,16 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  modalOverlay: {
-    flex: 1,
+  fixedOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
     backgroundColor: 'rgba(0, 0, 0, 0.4)',
+  },
+  modalContentWrapper: {
+    flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -840,7 +861,7 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     padding: 10,
     borderRadius: 10,
-    width: '80%',
+    width: '85%',
     alignSelf: 'flex-start',
     backgroundColor: 'rgba(220, 225, 232, 0.65)',
   },
