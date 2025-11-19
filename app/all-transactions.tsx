@@ -71,6 +71,8 @@ export default function AllTransactionsScreen() {
   const [selectedSource, setSelectedSource] = useState<SourceType>('all');
   const [minAmount, setMinAmount] = useState('');
   const [maxAmount, setMaxAmount] = useState('');
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
 
   useEffect(() => {
     fetchTransactions();
@@ -80,7 +82,7 @@ export default function AllTransactionsScreen() {
 
   useEffect(() => {
     applyFilters();
-  }, [searchQuery, filterType, transactions, selectedCategories, selectedPaymentMethods, selectedSource, minAmount, maxAmount]);
+  }, [searchQuery, filterType, transactions, selectedCategories, selectedPaymentMethods, selectedSource, minAmount, maxAmount, startDate, endDate]);
 
   const fetchTransactions = async () => {
     if (!session?.user?.id) return;
@@ -171,6 +173,18 @@ export default function AllTransactionsScreen() {
       filtered = filtered.filter((t) => Math.abs(t.amount) <= max);
     }
 
+    // Apply date range filter
+    if (startDate) {
+      const start = new Date(startDate);
+      start.setHours(0, 0, 0, 0);
+      filtered = filtered.filter((t) => new Date(t.occurred_at) >= start);
+    }
+    if (endDate) {
+      const end = new Date(endDate);
+      end.setHours(23, 59, 59, 999);
+      filtered = filtered.filter((t) => new Date(t.occurred_at) <= end);
+    }
+
     setFilteredTransactions(filtered);
   };
 
@@ -182,6 +196,8 @@ export default function AllTransactionsScreen() {
     setSelectedSource('all');
     setMinAmount('');
     setMaxAmount('');
+    setStartDate('');
+    setEndDate('');
   };
 
   const getActiveFiltersCount = () => {
@@ -191,6 +207,7 @@ export default function AllTransactionsScreen() {
     if (selectedPaymentMethods.length > 0) count++;
     if (selectedSource !== 'all') count++;
     if (minAmount || maxAmount) count++;
+    if (startDate || endDate) count++;
     return count;
   };
 
@@ -725,6 +742,102 @@ export default function AllTransactionsScreen() {
                   />
                 </View>
               </View>
+
+              {/* Date Range Filter */}
+              <View style={styles.filterSection}>
+                <Text style={styles.filterSectionTitle}>Date Range</Text>
+                <View style={styles.dateRangeContainer}>
+                  <View style={styles.dateInputWrapper}>
+                    <Text style={styles.dateLabel}>From</Text>
+                    <TextInput
+                      style={styles.dateInput}
+                      placeholder="YYYY-MM-DD"
+                      value={startDate}
+                      onChangeText={setStartDate}
+                      placeholderTextColor={Colors.textSecondary}
+                    />
+                  </View>
+                  <View style={styles.dateInputWrapper}>
+                    <Text style={styles.dateLabel}>To</Text>
+                    <TextInput
+                      style={styles.dateInput}
+                      placeholder="YYYY-MM-DD"
+                      value={endDate}
+                      onChangeText={setEndDate}
+                      placeholderTextColor={Colors.textSecondary}
+                    />
+                  </View>
+                </View>
+                <View style={styles.quickDateButtons}>
+                  <TouchableOpacity
+                    style={styles.quickDateButton}
+                    onPress={() => {
+                      const today = new Date();
+                      const yyyy = today.getFullYear();
+                      const mm = String(today.getMonth() + 1).padStart(2, '0');
+                      const dd = String(today.getDate()).padStart(2, '0');
+                      const todayStr = `${yyyy}-${mm}-${dd}`;
+                      setStartDate(todayStr);
+                      setEndDate(todayStr);
+                    }}
+                  >
+                    <Text style={styles.quickDateButtonText}>Today</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.quickDateButton}
+                    onPress={() => {
+                      const today = new Date();
+                      const weekAgo = new Date(today);
+                      weekAgo.setDate(weekAgo.getDate() - 7);
+                      const formatDate = (d: Date) => {
+                        const yyyy = d.getFullYear();
+                        const mm = String(d.getMonth() + 1).padStart(2, '0');
+                        const dd = String(d.getDate()).padStart(2, '0');
+                        return `${yyyy}-${mm}-${dd}`;
+                      };
+                      setStartDate(formatDate(weekAgo));
+                      setEndDate(formatDate(today));
+                    }}
+                  >
+                    <Text style={styles.quickDateButtonText}>Last 7 Days</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.quickDateButton}
+                    onPress={() => {
+                      const today = new Date();
+                      const monthAgo = new Date(today);
+                      monthAgo.setDate(monthAgo.getDate() - 30);
+                      const formatDate = (d: Date) => {
+                        const yyyy = d.getFullYear();
+                        const mm = String(d.getMonth() + 1).padStart(2, '0');
+                        const dd = String(d.getDate()).padStart(2, '0');
+                        return `${yyyy}-${mm}-${dd}`;
+                      };
+                      setStartDate(formatDate(monthAgo));
+                      setEndDate(formatDate(today));
+                    }}
+                  >
+                    <Text style={styles.quickDateButtonText}>Last 30 Days</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={styles.quickDateButton}
+                    onPress={() => {
+                      const today = new Date();
+                      const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
+                      const formatDate = (d: Date) => {
+                        const yyyy = d.getFullYear();
+                        const mm = String(d.getMonth() + 1).padStart(2, '0');
+                        const dd = String(d.getDate()).padStart(2, '0');
+                        return `${yyyy}-${mm}-${dd}`;
+                      };
+                      setStartDate(formatDate(firstDay));
+                      setEndDate(formatDate(today));
+                    }}
+                  >
+                    <Text style={styles.quickDateButtonText}>This Month</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
             </ScrollView>
 
             {/* Modal Footer */}
@@ -1099,6 +1212,46 @@ const styles = StyleSheet.create({
   amountRangeSeparator: {
     fontSize: 14,
     color: Colors.textSecondary,
+  },
+  dateRangeContainer: {
+    gap: 12,
+  },
+  dateInputWrapper: {
+    gap: 8,
+  },
+  dateLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: Colors.textSecondary,
+  },
+  dateInput: {
+    height: 44,
+    borderWidth: 1,
+    borderColor: Colors.gray200,
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    fontSize: 16,
+    backgroundColor: Colors.white,
+    color: Colors.textPrimary,
+  },
+  quickDateButtons: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 12,
+  },
+  quickDateButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 6,
+    backgroundColor: Colors.gray100,
+    borderWidth: 1,
+    borderColor: Colors.gray200,
+  },
+  quickDateButtonText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: Colors.primary,
   },
   modalFooter: {
     flexDirection: 'row',
