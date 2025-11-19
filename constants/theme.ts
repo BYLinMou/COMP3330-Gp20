@@ -7,6 +7,7 @@ import { Platform } from 'react-native';
 export const Colors = {
   // Brand colors
   primary: '#8B5CF6', // Purple
+  primaryLight: '#DDD6FE', // Light purple for backgrounds
   primaryDark: '#7C3AED',
   secondary: '#3B82F6', // Blue
   secondaryLight: '#60A5FA',

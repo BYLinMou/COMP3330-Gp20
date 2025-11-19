@@ -76,17 +76,23 @@ export default function SignUp() {
             petEmoji: pet.emoji,
           } : undefined);
           console.log('✅ User account initialized successfully');
-        } catch (initError) {
+        } catch (initError: any) {
           console.error('❌ Error initializing user account:', initError);
-          // Note: Account can still be used, but some features might not work
-          // The addTransaction function will create the profile on first use if needed
-          Alert.alert(
-            'Partial Setup',
-            'Your account was created but some initial data failed to load. This will be set up automatically on first use.',
-            [{ text: 'Continue to Sign In', onPress: () => router.replace('/(auth)/sign-in') }]
-          );
-          setLoading(false);
-          return;
+          
+          // Check if it's a missing table error (demo mode)
+          if (initError?.code === 'PGRST205' || initError?.code === '23503') {
+            console.log('Note: Some database tables not set up yet, continuing with basic setup');
+            // Account can still be used with mock data
+          } else {
+            // Other errors - still allow account creation
+            Alert.alert(
+              'Partial Setup',
+              'Your account was created but some initial data failed to load. This will be set up automatically on first use.',
+              [{ text: 'Continue to Sign In', onPress: () => router.replace('/(auth)/sign-in') }]
+            );
+            setLoading(false);
+            return;
+          }
         }
       }
 

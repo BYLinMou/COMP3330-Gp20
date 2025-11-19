@@ -1,15 +1,14 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Animated, Alert } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors, Gradients } from '../../constants/theme';
 import { RefreshableScrollView } from '../../components/refreshable-scroll-view';
+import FlippablePetCard from '../../components/flippable-pet-card';
 import { 
   getPetState, 
   getActivePet, 
-  getUserPets, 
-  switchPet, 
   purchasePet,
   AVAILABLE_PETS,
   UserPet,
@@ -21,90 +20,25 @@ export default function PetScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [petState, setPetState] = useState<PetState | null>(null);
   const [activePet, setActivePet] = useState<UserPet | null>(null);
-  const [userPets, setUserPets] = useState<UserPet[]>([]);
   const [loading, setLoading] = useState(true);
-  
-  // Animation refs
-  const bounceAnim = useRef(new Animated.Value(0)).current;
-  const rotateAnim = useRef(new Animated.Value(0)).current;
-  const scaleAnim = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
     loadPetData();
-    startAnimations();
   }, []);
-
-  useEffect(() => {
-    // Continuous animation loop
-    const animationLoop = setInterval(() => {
-      startAnimations();
-    }, 4000);
-
-    return () => clearInterval(animationLoop);
-  }, []);
-
-  const startAnimations = () => {
-    // Bounce animation
-    Animated.sequence([
-      Animated.timing(bounceAnim, {
-        toValue: -15,
-        duration: 400,
-        useNativeDriver: true,
-      }),
-      Animated.timing(bounceAnim, {
-        toValue: 0,
-        duration: 400,
-        useNativeDriver: true,
-      }),
-    ]).start();
-
-    // Slight rotation
-    Animated.sequence([
-      Animated.timing(rotateAnim, {
-        toValue: 1,
-        duration: 200,
-        useNativeDriver: true,
-      }),
-      Animated.timing(rotateAnim, {
-        toValue: -1,
-        duration: 400,
-        useNativeDriver: true,
-      }),
-      Animated.timing(rotateAnim, {
-        toValue: 0,
-        duration: 200,
-        useNativeDriver: true,
-      }),
-    ]).start();
-
-    // Scale pulse
-    Animated.sequence([
-      Animated.timing(scaleAnim, {
-        toValue: 1.1,
-        duration: 300,
-        useNativeDriver: true,
-      }),
-      Animated.timing(scaleAnim, {
-        toValue: 1,
-        duration: 300,
-        useNativeDriver: true,
-      }),
-    ]).start();
-  };
 
   const loadPetData = async () => {
     try {
-      const [state, active, pets] = await Promise.all([
+      const [state, active] = await Promise.all([
         getPetState(),
         getActivePet(),
-        getUserPets(),
       ]);
       
       setPetState(state);
       setActivePet(active);
-      setUserPets(pets);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error loading pet data:', error);
+      // Show error to user if needed
+      Alert.alert('Error', 'Failed to load pet data. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -121,6 +55,15 @@ export default function PetScreen() {
       const availablePet = AVAILABLE_PETS.find(p => p.id === petId);
       if (!availablePet) return;
 
+      // Check if user has enough XP
+      if (petState && petState.xp < availablePet.xp_cost) {
+        Alert.alert(
+          'Not Enough XP',
+          `You need ${availablePet.xp_cost} XP but only have ${petState.xp} XP. Keep logging expenses to earn more!`
+        );
+        return;
+      }
+
       Alert.alert(
         'Purchase Pet',
         `Do you want to purchase ${availablePet.breed} for ${availablePet.xp_cost} XP?`,
@@ -134,6 +77,7 @@ export default function PetScreen() {
                 Alert.alert('Success!', `${availablePet.breed} has been added to your collection!`);
                 await loadPetData();
               } catch (error: any) {
+                console.error('Error purchasing pet:', error);
                 Alert.alert('Error', error.message || 'Failed to purchase pet');
               }
             },
@@ -142,16 +86,6 @@ export default function PetScreen() {
       );
     } catch (error) {
       console.error('Error purchasing pet:', error);
-    }
-  };
-
-  const handleSwitchPet = async (petId: string) => {
-    try {
-      await switchPet(petId);
-      await loadPetData();
-    } catch (error) {
-      console.error('Error switching pet:', error);
-      Alert.alert('Error', 'Failed to switch pet');
     }
   };
 
@@ -173,10 +107,6 @@ export default function PetScreen() {
   const lastFed = petState?.last_feed_at 
     ? `${Math.floor((Date.now() - new Date(petState.last_feed_at).getTime()) / (1000 * 60 * 60))}h ago`
     : 'Never';
-  const rotate = rotateAnim.interpolate({
-    inputRange: [-1, 1],
-    outputRange: ['-10deg', '10deg'],
-  });
 
   const outfits = [
     { id: 1, name: 'Casual', xp: 0, unlocked: true, wearing: true },
@@ -206,34 +136,14 @@ export default function PetScreen() {
           <View style={styles.bubblePointer} />
         </View>
 
-        {/* Pet Character Card - Larger with 3D-like effects */}
-        <View style={styles.petCard}>
-          {/* Animated Pet Avatar - Much Larger */}
-          <Animated.View 
-            style={[
-              styles.petAvatarContainer,
-              {
-                transform: [
-                  { translateY: bounceAnim },
-                  { rotate: rotate },
-                  { scale: scaleAnim },
-                ],
-              }
-            ]}
-          >
-            <LinearGradient
-              colors={['#ffffff', '#f5f5f5']}
-              style={styles.petAvatar}
-            >
-              <Text style={styles.petEmoji}>{activePet?.pet_emoji || '🐶'}</Text>
-            </LinearGradient>
-          </Animated.View>
-
-          {/* Pet Info */}
-          <View style={styles.petInfo}>
-            <Text style={styles.petName}>{activePet?.pet_name || 'Aura'}</Text>
-            <Text style={styles.petLevel}>Level {petState?.level || 1} {activePet?.pet_breed || 'Financial Mentor'}</Text>
-          </View>
+        {/* Flippable Pet Card */}
+        <View style={styles.petCardContainer}>
+          <FlippablePetCard 
+            petState={petState} 
+            activePet={activePet} 
+            size="large"
+            onPetChanged={loadPetData}
+          />
         </View>
 
         {/* Pet Status Card */}
@@ -307,7 +217,7 @@ export default function PetScreen() {
 
           {/* Available Pets for Purchase */}
           {AVAILABLE_PETS.map((pet) => {
-            const owned = userPets.some(up => up.pet_type === pet.type && up.pet_breed === pet.breed);
+            const owned = false; // TODO: Check ownership when needed
             return (
               <View key={pet.id} style={styles.petShopItem}>
                 <View style={styles.petShopLeft}>
@@ -339,41 +249,6 @@ export default function PetScreen() {
             );
           })}
         </View>
-
-        {/* My Pets Collection */}
-        {userPets.length > 0 && (
-          <View style={styles.card}>
-            <View style={styles.cardHeader}>
-              <Ionicons name="albums" size={24} color={Colors.success} />
-              <Text style={styles.cardTitle}>My Pets</Text>
-            </View>
-            <Text style={styles.shopSubtitle}>
-              Tap on a pet to make it your active companion!
-            </Text>
-
-            <View style={styles.myPetsGrid}>
-              {userPets.map((pet) => (
-                <TouchableOpacity
-                  key={pet.id}
-                  style={[
-                    styles.myPetCard,
-                    pet.is_active && styles.myPetCardActive,
-                  ]}
-                  onPress={() => !pet.is_active && handleSwitchPet(pet.id)}
-                >
-                  <Text style={styles.myPetEmoji}>{pet.pet_emoji}</Text>
-                  <Text style={styles.myPetName}>{pet.pet_name}</Text>
-                  {pet.is_active && (
-                    <View style={styles.activeBadge}>
-                      <Ionicons name="checkmark-circle" size={16} color={Colors.success} />
-                      <Text style={styles.activeBadgeText}>Active</Text>
-                    </View>
-                  )}
-                </TouchableOpacity>
-              ))}
-            </View>
-          </View>
-        )}
 
         {/* Outfit Shop */}
         <View style={styles.card}>
@@ -478,51 +353,8 @@ const styles = StyleSheet.create({
     borderRightColor: 'transparent',
     borderTopColor: Colors.gradientStart,
   },
-  petCard: {
-    backgroundColor: Colors.white,
-    borderRadius: 20,
-    padding: 24,
+  petCardContainer: {
     marginBottom: 16,
-    alignItems: 'center',
-    shadowColor: Colors.black,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 12,
-    elevation: 3,
-  },
-  petAvatarContainer: {
-    marginBottom: 16,
-  },
-  petAvatar: {
-    width: 180,
-    height: 180,
-    borderRadius: 90,
-    justifyContent: 'center',
-    alignItems: 'center',
-    borderWidth: 4,
-    borderColor: Colors.primary,
-    shadowColor: Colors.primary,
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.3,
-    shadowRadius: 12,
-    elevation: 8,
-  },
-  petEmoji: {
-    fontSize: 100,
-  },
-  petInfo: {
-    alignItems: 'center',
-  },
-  petName: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: Colors.primary,
-    marginBottom: 4,
-  },
-  petLevel: {
-    fontSize: 15,
-    color: Colors.textSecondary,
-    marginBottom: 0,
   },
   card: {
     backgroundColor: Colors.white,
@@ -683,45 +515,6 @@ const styles = StyleSheet.create({
   },
   petShopButtonTextOwned: {
     color: Colors.gray600 || Colors.textSecondary,
-  },
-  myPetsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
-  },
-  myPetCard: {
-    width: '47%',
-    backgroundColor: Colors.gray100,
-    borderRadius: 12,
-    padding: 16,
-    alignItems: 'center',
-    borderWidth: 2,
-    borderColor: 'transparent',
-  },
-  myPetCardActive: {
-    borderColor: Colors.success,
-    backgroundColor: '#f0fdf4',
-  },
-  myPetEmoji: {
-    fontSize: 48,
-    marginBottom: 8,
-  },
-  myPetName: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: Colors.textPrimary,
-    textAlign: 'center',
-  },
-  activeBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    marginTop: 6,
-  },
-  activeBadgeText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: Colors.success,
   },
   outfitItem: {
     flexDirection: 'row',

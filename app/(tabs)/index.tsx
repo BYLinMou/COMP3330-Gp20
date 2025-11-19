@@ -1,22 +1,22 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, Dimensions, ActivityIndicator, TouchableOpacity, Modal, Alert, Pressable, Animated } from 'react-native';
+import React, { useState, useEffect, useRef } from 'react';
+import { View, Text, StyleSheet, ActivityIndicator, TouchableOpacity, Alert, Pressable, Animated } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { Colors } from '../../constants/theme';
 import { RefreshableScrollView } from '../../components/refreshable-scroll-view';
+import FlippablePetCard from '../../components/flippable-pet-card';
 import { 
   getRecentTransactions, 
   getIncomeAndExpenses,
+  getBalancesByPaymentMethod,
   subscribeToTransactionChanges,
   deleteTransaction,
-  getBalancesByPaymentMethod,
   type Transaction 
 } from '../../src/services/transactions';
-import { getPaymentMethods } from '../../src/services/payment-methods';
+import { getPaymentMethods, type PaymentMethod } from '../../src/services/payment-methods';
 import { useAuth } from '../../src/providers/AuthProvider';
-
-const { width } = Dimensions.get('window');
+import { getPetState, getActivePet, type PetState, type UserPet } from '../../src/services/pet';
 
 // Helper function to format relative time
 function getRelativeTime(dateString: string): string {
@@ -28,10 +28,10 @@ function getRelativeTime(dateString: string): string {
   const diffDays = Math.floor(diffMs / 86400000);
 
   if (diffMins < 1) return 'Just now';
-  if (diffMins < 60) return `${diffMins} minute${diffMins > 1 ? 's' : ''} ago`;
-  if (diffHours < 24) return `${diffHours} hour${diffHours > 1 ? 's' : ''} ago`;
-  if (diffDays === 1) return '1 day ago';
-  return `${diffDays} days ago`;
+  if (diffMins < 60) return `${diffMins}m ago`;
+  if (diffHours < 24) return `${diffHours}h ago`;
+  if (diffDays === 1) return '1d ago';
+  return `${diffDays}d ago`;
 }
 
 export default function HomeScreen() {
@@ -42,135 +42,24 @@ export default function HomeScreen() {
   const [balance, setBalance] = useState(0);
   const [income, setIncome] = useState(0);
   const [spent, setSpent] = useState(0);
-  const [transactionLimit, setTransactionLimit] = useState(5);
-  const [showLimitDropdown, setShowLimitDropdown] = useState(false);
+  const [petState, setPetState] = useState<PetState | null>(null);
+  const [activePet, setActivePet] = useState<UserPet | null>(null);
   const [expandedTransactionId, setExpandedTransactionId] = useState<string | null>(null);
-  const [pressedTransactionId, setPressedTransactionId] = useState<string | null>(null);
-  const [isFlipped, setIsFlipped] = useState(false);
+  const [isBalanceFlipped, setIsBalanceFlipped] = useState(false);
   const [paymentMethodBalances, setPaymentMethodBalances] = useState<Record<string, number>>({});
   const [loadingPaymentMethods, setLoadingPaymentMethods] = useState(false);
-  const [showBackSide, setShowBackSide] = useState(false);
-  const [showCardContent, setShowCardContent] = useState(true);
-  const blurAnimRef = React.useRef<{ [key: string]: Animated.Value }>({});
-  const flipAnimation = React.useRef(new Animated.Value(0)).current;
-  const cardSlideAnim = React.useRef(new Animated.Value(0)).current;
-  const transactionsSlideAnim = React.useRef(new Animated.Value(0)).current;
+  
+  // Animation ref for balance card flip
+  const balanceFlipAnimation = useRef(new Animated.Value(0)).current;
 
-  const budget = 2000; // This could also come from Supabase
+  const budget = 2000;
   const budgetUsed = Math.round((spent / budget) * 100);
-  const limitOptions = [5, 10, 20, 50, 100];
-
-  const handleFlip = async () => {
-    // Start flip animation
-    Animated.spring(flipAnimation, {
-      toValue: isFlipped ? 0 : 180,
-      friction: 8,
-      tension: 10,
-      useNativeDriver: true,
-    }).start();
-
-    // Hide card content during flip to front
-    if (isFlipped) {
-      setShowCardContent(false);
-      setTimeout(() => {
-        setShowCardContent(true);
-      }, 600); // Delay showing content until after flip animation
-    }
-
-    // Fetch payment method balances when flipping to back
-    if (!isFlipped) {
-      setShowBackSide(true);
-      
-      // Start slide-in animation immediately when flipping to back
-      Animated.spring(cardSlideAnim, {
-        toValue: 1,
-        friction: 6,
-        tension: 80,
-        useNativeDriver: true,
-      }).start();
-
-      // Start slide-in animation for transactions card with minimal delay
-      setTimeout(() => {
-        Animated.spring(transactionsSlideAnim, {
-          toValue: 1,
-          friction: 6,
-          tension: 80,
-          useNativeDriver: true,
-        }).start();
-      }, 20); // Reduced delay to 20ms
-      
-      try {
-        setLoadingPaymentMethods(true);
-        
-        // Get payment methods and create sample balances
-        const methods = await getPaymentMethods();
-        const balances: Record<string, number> = {};
-        
-        // For demonstration, assign the total balance distributed across payment methods
-        // In production, this would query actual transaction data by payment method
-        const methodsToShow = methods.slice(0, 6); // Show top 6 payment methods
-        const balancePerMethod = balance / methodsToShow.length;
-        
-        methodsToShow.forEach((method, index) => {
-          // Create varied sample data for visual interest
-          if (index === 0) {
-            balances[method.name] = balancePerMethod * 1.5;
-          } else if (index === 1) {
-            balances[method.name] = balancePerMethod * 0.8;
-          } else if (index === 2) {
-            balances[method.name] = balancePerMethod * 0.5;
-          } else {
-            balances[method.name] = balancePerMethod * 0.3;
-          }
-        });
-        
-        setPaymentMethodBalances(balances);
-      } catch (error) {
-        console.error('Error fetching payment method balances:', error);
-      } finally {
-        setLoadingPaymentMethods(false);
-      }
-    } else {
-      // Hide back side with a slight delay to let animation complete
-      setTimeout(() => {
-        setShowBackSide(false);
-      }, 400);
-    }
-
-    setIsFlipped(!isFlipped);
-  };
-
-  useEffect(() => {
-    if (showCardContent || showBackSide) {
-      // Start slide-in animation for budget card immediately
-      Animated.spring(cardSlideAnim, {
-        toValue: 1,
-        friction: 6,
-        tension: 80,
-        useNativeDriver: true,
-      }).start();
-
-      // Start slide-in animation for transactions card with delay
-      setTimeout(() => {
-        Animated.spring(transactionsSlideAnim, {
-          toValue: 1,
-          friction: 6,
-          tension: 80,
-          useNativeDriver: true,
-        }).start();
-      }, 50); // Reduced delay to 50ms
-    } else {
-      // Reset animations when cards are hidden
-      cardSlideAnim.setValue(0);
-      transactionsSlideAnim.setValue(0);
-    }
-  }, [showCardContent, showBackSide, cardSlideAnim, transactionsSlideAnim]);
 
   // Initial data load
   useEffect(() => {
     if (!session) return;
     loadData();
-  }, [session, transactionLimit]);
+  }, [session]);
 
   // Realtime: refresh when transactions change
   useEffect(() => {
@@ -179,7 +68,6 @@ export default function HomeScreen() {
     (async () => {
       try {
         unsub = await subscribeToTransactionChanges(() => {
-          // Re-fetch summary + recent list on any change
           loadData();
         });
       } catch (e) {
@@ -193,11 +81,50 @@ export default function HomeScreen() {
     };
   }, [session]);
 
+  const handleBalanceFlip = async () => {
+    if (!isBalanceFlipped) {
+      // Load payment method balances when flipping to back
+      try {
+        setLoadingPaymentMethods(true);
+        const methods = await getPaymentMethods();
+        const balances: Record<string, number> = {};
+        
+        // For demo, distribute balance across payment methods
+        const methodsToShow = methods.slice(0, 6);
+        const balancePerMethod = balance / methodsToShow.length;
+        
+        methodsToShow.forEach((method, index) => {
+          if (index === 0) {
+            balances[method.name] = balancePerMethod * 1.5;
+          } else if (index === 1) {
+            balances[method.name] = balancePerMethod * 0.8;
+          } else {
+            balances[method.name] = balancePerMethod * 0.5;
+          }
+        });
+        
+        setPaymentMethodBalances(balances);
+      } catch (error) {
+        console.error('Error loading payment methods:', error);
+      } finally {
+        setLoadingPaymentMethods(false);
+      }
+    }
+
+    Animated.spring(balanceFlipAnimation, {
+      toValue: isBalanceFlipped ? 0 : 180,
+      friction: 8,
+      tension: 10,
+      useNativeDriver: true,
+    }).start();
+
+    setIsBalanceFlipped(!isBalanceFlipped);
+  };
+
   async function loadData() {
     try {
       setLoading(true);
       
-      // Get current month date range
       const now = new Date();
       const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
       const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
@@ -205,11 +132,22 @@ export default function HomeScreen() {
       const startDate = firstDay.toISOString().split('T')[0];
       const endDate = lastDay.toISOString().split('T')[0];
 
-      // Fetch all data in parallel
       const [transactions, stats] = await Promise.all([
-        getRecentTransactions(transactionLimit),
+        getRecentTransactions(10),
         getIncomeAndExpenses(startDate, endDate),
       ]);
+
+      // Load pet data
+      try {
+        const [state, active] = await Promise.all([
+          getPetState(),
+          getActivePet(),
+        ]);
+        setPetState(state);
+        setActivePet(active);
+      } catch (petError: any) {
+        console.error('Error loading pet data:', petError);
+      }
 
       setRecentTransactions(transactions);
       setIncome(stats.income);
@@ -224,30 +162,8 @@ export default function HomeScreen() {
 
   async function onRefresh() {
     setRefreshing(true);
-    try {
-      // Get current month date range
-      const now = new Date();
-      const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
-      const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-      
-      const startDate = firstDay.toISOString().split('T')[0];
-      const endDate = lastDay.toISOString().split('T')[0];
-
-      // Fetch all data in parallel
-      const [transactions, stats] = await Promise.all([
-        getRecentTransactions(transactionLimit),
-        getIncomeAndExpenses(startDate, endDate),
-      ]);
-
-      setRecentTransactions(transactions);
-      setIncome(stats.income);
-      setSpent(stats.expenses);
-      setBalance(stats.balance);
-    } catch (error) {
-      console.error('Error refreshing dashboard data:', error);
-    } finally {
-      setRefreshing(false);
-    }
+    await loadData();
+    setRefreshing(false);
   }
 
   return (
@@ -257,159 +173,115 @@ export default function HomeScreen() {
         refreshing={refreshing}
         onRefresh={onRefresh}
       >
-        {/* Balance Card */}
-        <TouchableOpacity onPress={handleFlip} activeOpacity={0.9}>
-          <View style={styles.flipContainer}>
-            {/* Front Side */}
-            <Animated.View
-              style={[
-                styles.flipCard,
-                {
-                  transform: [
-                    {
-                      rotateY: flipAnimation.interpolate({
-                        inputRange: [0, 180],
-                        outputRange: ['0deg', '180deg'],
-                      }),
-                    },
-                  ],
-                },
-                { opacity: flipAnimation.interpolate({
-                    inputRange: [0, 90, 90.01, 180],
-                    outputRange: [1, 1, 0, 0],
-                  })
-                },
-              ]}
-              pointerEvents={isFlipped ? 'none' : 'auto'}
-            >
-              <LinearGradient
-                colors={[Colors.gradientStart, Colors.gradientEnd]}
-                style={styles.balanceCard}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-              >
-                <View style={styles.balanceHeader}>
-                  <Text style={styles.balanceLabel}>Current Balance</Text>
-                  <Ionicons name="wallet-outline" size={24} color={Colors.white} />
-                </View>
-                <Text style={styles.balanceAmount}>${balance.toFixed(2)}</Text>
-                <View style={styles.balanceFooter}>
-                  <View style={styles.balanceItem}>
-                    <Ionicons name="trending-up" size={16} color={Colors.white} />
-                    <Text style={styles.balanceItemText}>Income: ${income}</Text>
-                  </View>
-                  <View style={styles.balanceItem}>
-                    <Ionicons name="trending-down" size={16} color={Colors.white} />
-                    <Text style={styles.balanceItemText}>Spent: ${spent}</Text>
-                  </View>
-                </View>
-              </LinearGradient>
-            </Animated.View>
+        {/* Pet Section - Flippable */}
+        <View style={styles.petSection}>
+          <FlippablePetCard 
+            petState={petState} 
+            activePet={activePet} 
+            size="small"
+            onPetChanged={loadData}
+          />
+        </View>
 
-            {/* Back Side - Only render when visible to avoid blocking */}
-            {showBackSide && (
-            <Animated.View
-              style={[
-                styles.flipCard,
-                styles.flipCardBack,
-                {
-                  transform: [
-                    {
-                      rotateY: flipAnimation.interpolate({
-                        inputRange: [0, 180],
-                        outputRange: ['180deg', '360deg'],
-                      }),
-                    },
-                  ],
-                },
-                { opacity: flipAnimation.interpolate({
-                    inputRange: [0, 90, 90.01, 180],
-                    outputRange: [0, 0, 1, 1],
+        {/* Balance Card - Flippable */}
+        <TouchableOpacity 
+          style={styles.balanceCardContainer} 
+          onPress={handleBalanceFlip}
+          activeOpacity={0.9}
+        >
+          <Animated.View
+            style={[
+              styles.balanceCard,
+              {
+                transform: [{ 
+                  rotateY: balanceFlipAnimation.interpolate({
+                    inputRange: [0, 180],
+                    outputRange: ['0deg', '180deg'],
                   })
-                },
-              ]}
-              pointerEvents={isFlipped ? 'auto' : 'none'}
-            >
-              <LinearGradient
-                colors={[Colors.gradientEnd, Colors.gradientStart]}
-                style={styles.balanceCard}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-              >
-                <View style={styles.balanceHeader}>
-                  <Text style={styles.balanceLabel}>Payment Method Balances</Text>
-                  <Ionicons name="card-outline" size={24} color={Colors.white} />
-                </View>
-                
-                {loadingPaymentMethods ? (
-                  <View style={styles.paymentMethodsLoading}>
-                    <ActivityIndicator size="large" color={Colors.white} />
+                }],
+                opacity: balanceFlipAnimation.interpolate({
+                  inputRange: [0, 90, 180],
+                  outputRange: [1, 0, 0],
+                }),
+              },
+            ]}
+          >
+            <View style={styles.balanceHeader}>
+              <Text style={styles.balanceLabel}>Current Balance</Text>
+              <Ionicons name="sync-outline" size={20} color={Colors.textSecondary} />
+            </View>
+            <Text style={styles.balanceAmount}>${balance.toFixed(2)}</Text>
+            <View style={styles.balanceFooter}>
+              <View style={styles.balanceItem}>
+                <Ionicons name="arrow-down-circle" size={16} color={Colors.success} />
+                <Text style={styles.balanceItemLabel}>Income</Text>
+                <Text style={styles.balanceItemValue}>${income}</Text>
+              </View>
+              <View style={styles.balanceDivider} />
+              <View style={styles.balanceItem}>
+                <Ionicons name="arrow-up-circle" size={16} color={Colors.error} />
+                <Text style={styles.balanceItemLabel}>Spent</Text>
+                <Text style={styles.balanceItemValue}>${spent}</Text>
+              </View>
+            </View>
+            <View style={styles.tapHint}>
+              <Ionicons name="sync-outline" size={12} color={Colors.textSecondary} />
+              <Text style={styles.tapHintText}>Tap to view by payment method</Text>
+            </View>
+          </Animated.View>
+
+          {/* Back side - Payment Methods */}
+          <Animated.View
+            style={[
+              styles.balanceCard,
+              styles.balanceCardBack,
+              {
+                transform: [{ 
+                  rotateY: balanceFlipAnimation.interpolate({
+                    inputRange: [0, 180],
+                    outputRange: ['180deg', '360deg'],
+                  })
+                }],
+                opacity: balanceFlipAnimation.interpolate({
+                  inputRange: [0, 90, 180],
+                  outputRange: [0, 0, 1],
+                }),
+              },
+            ]}
+          >
+            <View style={styles.balanceHeader}>
+              <Text style={styles.balanceLabel}>Payment Methods</Text>
+              <Ionicons name="arrow-back-outline" size={20} color={Colors.textSecondary} />
+            </View>
+            {loadingPaymentMethods ? (
+              <ActivityIndicator size="large" color={Colors.primary} style={{ marginVertical: 20 }} />
+            ) : (
+              <View style={styles.paymentMethodsList}>
+                {Object.entries(paymentMethodBalances).map(([method, amount]) => (
+                  <View key={method} style={styles.paymentMethodItem}>
+                    <Text style={styles.paymentMethodName}>{method}</Text>
+                    <Text style={styles.paymentMethodAmount}>${amount.toFixed(2)}</Text>
                   </View>
-                ) : (
-                  <View style={styles.paymentMethodsList}>
-                    {Object.entries(paymentMethodBalances).length === 0 ? (
-                      <Text style={styles.paymentMethodEmpty}>No payment methods found</Text>
-                    ) : (
-                      Object.entries(paymentMethodBalances)
-                        .sort(([, a], [, b]) => Math.abs(b) - Math.abs(a))
-                        .map(([method, balance]) => {
-                          const icon = 
-                            method.toLowerCase().includes('cash') ? 'cash-outline' :
-                            method.toLowerCase().includes('octopus') ? 'card-outline' :
-                            method.toLowerCase().includes('credit') ? 'card-outline' :
-                            method.toLowerCase().includes('debit') ? 'card-outline' :
-                            'wallet-outline';
-                          
-                          return (
-                            <View key={method} style={styles.paymentMethodItem}>
-                              <View style={styles.paymentMethodLeft}>
-                                <Ionicons name={icon} size={20} color={Colors.white} />
-                                <Text style={styles.paymentMethodName}>{method}</Text>
-                              </View>
-                              <Text
-                                style={[
-                                  styles.paymentMethodBalance,
-                                  balance >= 0 ? styles.paymentMethodPositive : styles.paymentMethodNegative,
-                                ]}
-                              >
-                                {balance >= 0 ? '+' : ''}${balance.toFixed(2)}
-                              </Text>
-                            </View>
-                          );
-                        })
-                    )}
-                  </View>
-                )}
-              </LinearGradient>
-            </Animated.View>
+                ))}
+              </View>
             )}
-          </View>
+            <View style={styles.tapHint}>
+              <Ionicons name="arrow-back-outline" size={12} color={Colors.textSecondary} />
+              <Text style={styles.tapHintText}>Tap to go back</Text>
+            </View>
+          </Animated.View>
         </TouchableOpacity>
 
         {/* Monthly Budget */}
-        {!isFlipped && showCardContent && (
-        <Animated.View
-          style={[
-            styles.card,
-            {
-              transform: [
-                {
-                  translateY: cardSlideAnim.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [50, 0],
-                  }),
-                },
-              ],
-              opacity: cardSlideAnim.interpolate({
-                inputRange: [0, 1],
-                outputRange: [0, 1],
-              }),
-            },
-          ]}
-        >
+        <View style={styles.card}>
           <View style={styles.cardHeader}>
             <Text style={styles.cardTitle}>Monthly Budget</Text>
-            <View style={styles.badge}>
+            <View style={[
+              styles.badge,
+              budgetUsed >= 90 ? styles.badgeDanger : 
+              budgetUsed >= 70 ? styles.badgeWarning : 
+              styles.badgeSuccess
+            ]}>
               <Text style={styles.badgeText}>{budgetUsed}% used</Text>
             </View>
           </View>
@@ -418,79 +290,22 @@ export default function HomeScreen() {
             <Text style={styles.budgetAmount}>${budget} budget</Text>
           </View>
           <View style={styles.progressBar}>
-            <View style={[styles.progressFill, { width: `${budgetUsed}%` }]} />
+            <View style={[styles.progressFill, { width: `${Math.min(budgetUsed, 100)}%` }]} />
           </View>
-          <View style={styles.warningContainer}>
-            <Ionicons name="alert-circle" size={16} color={Colors.error} />
-            <Text style={styles.warningText}>You're close to your budget limit!</Text>
-          </View>
-        </Animated.View>
-        )}
-
-        {/* Recent Transactions */}
-        {!isFlipped && showCardContent && (
-        <Animated.View
-          style={[
-            styles.card,
-            {
-              transform: [
-                {
-                  translateY: transactionsSlideAnim.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [50, 0],
-                  }),
-                },
-              ],
-              opacity: transactionsSlideAnim.interpolate({
-                inputRange: [0, 1],
-                outputRange: [0, 1],
-              }),
-            },
-          ]}
-        >
-          <View style={styles.cardHeader}>
-            <Text style={styles.cardTitle}>Recent Transactions</Text>
-            <View style={styles.dropdownContainer}>
-              <TouchableOpacity
-                style={styles.dropdownButton}
-                onPress={() => setShowLimitDropdown(!showLimitDropdown)}
-              >
-                <Text style={styles.dropdownButtonText}>{transactionLimit}</Text>
-                <Ionicons 
-                  name={showLimitDropdown ? "chevron-up" : "chevron-down"} 
-                  size={18} 
-                  color={Colors.primary} 
-                />
-              </TouchableOpacity>
-            </View>
-          </View>
-          
-          {showLimitDropdown && (
-            <View style={styles.dropdownMenu}>
-              {limitOptions.map((option) => (
-                <TouchableOpacity
-                  key={option}
-                  style={[
-                    styles.dropdownOption,
-                    transactionLimit === option && styles.dropdownOptionSelected,
-                  ]}
-                  onPress={() => {
-                    setTransactionLimit(option);
-                    setShowLimitDropdown(false);
-                  }}
-                >
-                  <Text
-                    style={[
-                      styles.dropdownOptionText,
-                      transactionLimit === option && styles.dropdownOptionTextSelected,
-                    ]}
-                  >
-                    {option}
-                  </Text>
-                </TouchableOpacity>
-              ))}
+          {budgetUsed >= 90 && (
+            <View style={styles.warningContainer}>
+              <Ionicons name="alert-circle" size={16} color={Colors.error} />
+              <Text style={styles.warningText}>You're close to your budget limit!</Text>
             </View>
           )}
+        </View>
+
+        {/* Recent Transactions */}
+        <View style={styles.card}>
+          <View style={styles.cardHeader}>
+            <Text style={styles.cardTitle}>Recent Transactions</Text>
+          </View>
+          
           {loading ? (
             <View style={styles.loadingContainer}>
               <ActivityIndicator size="large" color={Colors.primary} />
@@ -501,117 +316,45 @@ export default function HomeScreen() {
               <Text style={styles.emptyText}>No transactions yet</Text>
             </View>
           ) : (
-            recentTransactions.map((transaction) => {
-              if (!blurAnimRef.current[transaction.id]) {
-                blurAnimRef.current[transaction.id] = new Animated.Value(0);
-              }
-              const blurAnim = blurAnimRef.current[transaction.id];
-              
-              return (
-                <Pressable
-                  key={transaction.id}
-                  onPress={() => {
-                    if (expandedTransactionId === transaction.id) {
-                      setExpandedTransactionId(null);
-                    } else {
-                      setExpandedTransactionId(transaction.id);
-                    }
-                  }}
-                  onPressIn={() => {
-                    setPressedTransactionId(transaction.id);
-                    Animated.timing(blurAnim, {
-                      toValue: 1,
-                      duration: 150,
-                      useNativeDriver: false,
-                    }).start();
-                  }}
-                  onPressOut={() => {
-                    setPressedTransactionId(null);
-                    Animated.timing(blurAnim, {
-                      toValue: 0,
-                      duration: 150,
-                      useNativeDriver: false,
-                    }).start();
-                  }}
-                >
-                  <Animated.View style={[
-                    styles.transactionItem,
-                    {
-                      opacity: blurAnim.interpolate({
-                        inputRange: [0, 1],
-                        outputRange: [1, 0.5],
-                      }),
-                    }
-                  ]}>
-                    <View style={styles.transactionLeft}>
-                      <Animated.Text style={[
-                        styles.transactionName,
-                        {
-                          letterSpacing: blurAnim.interpolate({
-                            inputRange: [0, 1],
-                            outputRange: [0, 0.5],
-                          }),
-                        }
-                      ]}>
-                        {transaction.merchant || 'Transaction'}
-                      </Animated.Text>
-                      <Animated.Text style={[
-                        styles.transactionTime,
-                        {
-                          letterSpacing: blurAnim.interpolate({
-                            inputRange: [0, 1],
-                            outputRange: [0, 0.5],
-                          }),
-                        }
-                      ]}>
-                        {getRelativeTime(transaction.occurred_at)}
-                      </Animated.Text>
-                    </View>
-                    <View style={styles.transactionRight}>
-                      <Animated.Text
-                        style={[
-                          styles.transactionAmount,
-                          transaction.amount > 0 ? styles.incomeAmount : styles.expenseAmount,
-                          {
-                            letterSpacing: blurAnim.interpolate({
-                              inputRange: [0, 1],
-                              outputRange: [0, 0.5],
-                            }),
-                          }
-                        ]}
-                      >
-                        {transaction.amount > 0 ? '+' : ''}${Math.abs(transaction.amount).toFixed(2)}
-                      </Animated.Text>
-                      <Animated.Text style={[
-                        styles.transactionCategory,
-                        {
-                          letterSpacing: blurAnim.interpolate({
-                            inputRange: [0, 1],
-                            outputRange: [0, 0.5],
-                          }),
-                        }
-                      ]}>
-                        {transaction.category?.name || 'Uncategorized'}
-                      </Animated.Text>
-                    </View>
-                  </Animated.View>
+            recentTransactions.map((transaction) => (
+              <Pressable
+                key={transaction.id}
+                onPress={() => {
+                  setExpandedTransactionId(
+                    expandedTransactionId === transaction.id ? null : transaction.id
+                  );
+                }}
+              >
+                <View style={styles.transactionItem}>
+                  <View style={styles.transactionLeft}>
+                    <Text style={styles.transactionName}>
+                      {transaction.merchant || 'Transaction'}
+                    </Text>
+                    <Text style={styles.transactionTime}>
+                      {getRelativeTime(transaction.occurred_at)}
+                    </Text>
+                  </View>
+                  <View style={styles.transactionRight}>
+                    <Text
+                      style={[
+                        styles.transactionAmount,
+                        transaction.amount > 0 ? styles.incomeAmount : styles.expenseAmount,
+                      ]}
+                    >
+                      {transaction.amount > 0 ? '+' : ''}${Math.abs(transaction.amount).toFixed(2)}
+                    </Text>
+                    <Text style={styles.transactionCategory}>
+                      {transaction.category?.name || 'Uncategorized'}
+                    </Text>
+                  </View>
+                </View>
 
                 {expandedTransactionId === transaction.id && (
                   <View style={styles.transactionExpandedDetails}>
-                    {/* Category */}
                     <View style={styles.expandedDetailRow}>
-                      <Text style={styles.expandedDetailLabel}>Category</Text>
-                      <Text style={styles.expandedDetailValue}>
-                        {transaction.category?.name || 'Uncategorized'}
-                      </Text>
-                    </View>
-
-                    {/* Date & Time */}
-                    <View style={styles.expandedDetailRow}>
-                      <Text style={styles.expandedDetailLabel}>Date & Time</Text>
+                      <Text style={styles.expandedDetailLabel}>Date</Text>
                       <Text style={styles.expandedDetailValue}>
                         {new Date(transaction.occurred_at).toLocaleString('en-US', {
-                          year: 'numeric',
                           month: 'short',
                           day: 'numeric',
                           hour: '2-digit',
@@ -620,79 +363,26 @@ export default function HomeScreen() {
                       </Text>
                     </View>
 
-                    {/* Merchant */}
-                    {transaction.merchant && (
-                      <View style={styles.expandedDetailRow}>
-                        <Text style={styles.expandedDetailLabel}>Merchant</Text>
-                        <Text style={styles.expandedDetailValue}>{transaction.merchant}</Text>
-                      </View>
-                    )}
-
-                    {/* Payment Method */}
                     {transaction.payment_method && (
                       <View style={styles.expandedDetailRow}>
-                        <Text style={styles.expandedDetailLabel}>Payment Method</Text>
+                        <Text style={styles.expandedDetailLabel}>Payment</Text>
                         <Text style={styles.expandedDetailValue}>{transaction.payment_method}</Text>
                       </View>
                     )}
 
-                    {/* Source */}
-                    <View style={styles.expandedDetailRow}>
-                      <Text style={styles.expandedDetailLabel}>Source</Text>
-                      <View style={styles.sourceBadge}>
-                        <Ionicons 
-                          name={
-                            transaction.source === 'manual' ? 'create-outline' :
-                            transaction.source === 'ocr' ? 'receipt-outline' :
-                            'sparkles'
-                          }
-                          size={12}
-                          color={Colors.white}
-                          style={{ marginRight: 4 }}
-                        />
-                        <Text style={styles.sourceBadgeText}>
-                          {transaction.source === 'manual' ? 'Manual' :
-                           transaction.source === 'ocr' ? 'Receipt (OCR)' :
-                           'AI Suggested'}
-                        </Text>
-                      </View>
-                    </View>
-
-                    {/* Items */}
-                    {(transaction as any).items && (transaction as any).items.length > 0 && (
-                      <View style={styles.expandedDetailRow}>
-                        <Text style={styles.expandedDetailLabel}>Items</Text>
-                        <View style={styles.itemsList}>
-                          {(transaction as any).items.map((item: any, index: number) => (
-                            <View key={index} style={styles.itemsListRow}>
-                              <Text style={styles.itemsListName}>{item.name}</Text>
-                              <View style={styles.itemsListQtyPrice}>
-                                <Text style={styles.itemsListQty}>×{item.amount}</Text>
-                                <Text style={styles.itemsListPrice}>
-                                  ${(item.price * item.amount).toFixed(2)}
-                                </Text>
-                              </View>
-                            </View>
-                          ))}
-                        </View>
-                      </View>
-                    )}
-
-                    {/* Notes */}
                     {transaction.note && (
                       <View style={styles.expandedDetailRow}>
-                        <Text style={styles.expandedDetailLabel}>Notes</Text>
+                        <Text style={styles.expandedDetailLabel}>Note</Text>
                         <Text style={styles.expandedDetailValue}>{transaction.note}</Text>
                       </View>
                     )}
 
-                    {/* Delete Button */}
                     <TouchableOpacity
-                      style={styles.transactionDeleteButton}
+                      style={styles.deleteButton}
                       onPress={() => {
                         Alert.alert(
                           'Delete Transaction',
-                          'Are you sure you want to delete this transaction?',
+                          'Are you sure?',
                           [
                             { text: 'Cancel', style: 'cancel' },
                             {
@@ -713,16 +403,14 @@ export default function HomeScreen() {
                       }}
                     >
                       <Ionicons name="trash-outline" size={16} color={Colors.error} />
-                      <Text style={styles.transactionDeleteButtonText}>Delete</Text>
+                      <Text style={styles.deleteButtonText}>Delete</Text>
                     </TouchableOpacity>
                   </View>
                 )}
               </Pressable>
-              );
-            })
+            ))
           )}
-        </Animated.View>
-        )}
+        </View>
 
         <View style={{ height: 20 }} />
       </RefreshableScrollView>
@@ -737,94 +425,157 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
-    padding: 16,
+  },
+  petSection: {
+    paddingHorizontal: 16,
+    paddingTop: 16,
+  },
+  balanceCardContainer: {
+    height: 180,
+    marginHorizontal: 16,
+    marginBottom: 16,
   },
   balanceCard: {
-    borderRadius: 16,
-    padding: 12,
-    marginBottom: 0,
-    shadowColor: Colors.black,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 3,
-    zIndex: 15,
-  },
-  balanceHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 6,
-  },
-  balanceLabel: {
-    fontSize: 13,
-    color: Colors.white,
-    opacity: 0.9,
-  },
-  balanceAmount: {
-    fontSize: 38,
-    fontWeight: 'bold',
-    color: Colors.white,
-    marginBottom: 10,
-  },
-  balanceFooter: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    gap: 8,
-  },
-  balanceItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  balanceItemText: {
-    fontSize: 12,
-    color: Colors.white,
-    fontWeight: '500',
-  },
-  card: {
+    position: 'absolute',
+    width: '100%',
+    height: '100%',
     backgroundColor: Colors.white,
     borderRadius: 16,
-    padding: 14,
-    marginBottom: 16,
+    padding: 20,
     shadowColor: Colors.black,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.05,
     shadowRadius: 8,
     elevation: 2,
-    overflow: 'visible',
-    zIndex: 10,
+    backfaceVisibility: 'hidden',
+  },
+  balanceCardBack: {
+    transform: [{ rotateY: '180deg' }],
+  },
+  balanceHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  balanceLabel: {
+    fontSize: 14,
+    color: Colors.textSecondary,
+    fontWeight: '500',
+  },
+  balanceAmount: {
+    fontSize: 36,
+    fontWeight: 'bold',
+    color: Colors.textPrimary,
+    marginBottom: 16,
+  },
+  balanceFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+  },
+  balanceItem: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  balanceDivider: {
+    width: 1,
+    height: 24,
+    backgroundColor: Colors.gray200,
+  },
+  balanceItemLabel: {
+    fontSize: 12,
+    color: Colors.textSecondary,
+  },
+  balanceItemValue: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: Colors.textPrimary,
+    marginLeft: 'auto',
+  },
+  tapHint: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    marginTop: 12,
+  },
+  tapHintText: {
+    fontSize: 11,
+    color: Colors.textSecondary,
+  },
+  paymentMethodsList: {
+    marginVertical: 8,
+  },
+  paymentMethodItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.gray100,
+  },
+  paymentMethodName: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: Colors.textPrimary,
+  },
+  paymentMethodAmount: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: Colors.textPrimary,
+  },
+  card: {
+    backgroundColor: Colors.white,
+    marginHorizontal: 16,
+    marginBottom: 16,
+    borderRadius: 16,
+    padding: 20,
+    shadowColor: Colors.black,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
   },
   cardHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 16,
   },
   cardTitle: {
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: '700',
     color: Colors.textPrimary,
-    marginBottom: 12,
   },
   badge: {
-    backgroundColor: Colors.error,
     paddingHorizontal: 10,
-    paddingVertical: 3,
-    borderRadius: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  badgeSuccess: {
+    backgroundColor: Colors.success,
+  },
+  badgeWarning: {
+    backgroundColor: Colors.warning,
+  },
+  badgeDanger: {
+    backgroundColor: Colors.error,
   },
   badgeText: {
     color: Colors.white,
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '600',
   },
   budgetInfo: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: 6,
+    marginBottom: 8,
   },
   budgetAmount: {
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: '600',
     color: Colors.textPrimary,
   },
@@ -833,48 +584,22 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.gray200,
     borderRadius: 4,
     overflow: 'hidden',
-    marginBottom: 10,
+    marginBottom: 12,
   },
   progressFill: {
     height: '100%',
-    backgroundColor: Colors.textPrimary,
+    backgroundColor: Colors.primary,
     borderRadius: 4,
   },
   warningContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    gap: 6,
   },
   warningText: {
-    fontSize: 12,
+    fontSize: 13,
     color: Colors.error,
     fontWeight: '500',
-  },
-  chartContainer: {
-    alignItems: 'center',
-    marginBottom: 24,
-  },
-  donutChart: {
-    width: 180,
-    height: 180,
-    borderRadius: 90,
-    position: 'relative',
-    overflow: 'hidden',
-  },
-  chartSegment: {
-    position: 'absolute',
-    width: '100%',
-    height: '100%',
-    borderRadius: 90,
-  },
-  donutHole: {
-    position: 'absolute',
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    backgroundColor: Colors.white,
-    top: 40,
-    left: 40,
   },
   transactionItem: {
     flexDirection: 'row',
@@ -882,11 +607,6 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     borderBottomWidth: 1,
     borderBottomColor: Colors.gray100,
-  },
-  transactionContent: {
-    flex: 1,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
   },
   transactionLeft: {
     flex: 1,
@@ -920,17 +640,15 @@ const styles = StyleSheet.create({
     color: Colors.textSecondary,
   },
   transactionExpandedDetails: {
-    paddingHorizontal: 0,
     paddingTop: 12,
     paddingBottom: 12,
-    borderTopWidth: 1,
-    borderTopColor: Colors.gray100,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.gray100,
   },
   expandedDetailRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 8,
+    paddingVertical: 6,
   },
   expandedDetailLabel: {
     fontSize: 13,
@@ -941,59 +659,11 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: Colors.textPrimary,
     fontWeight: '500',
-    flex: 1,
     textAlign: 'right',
+    flex: 1,
     marginLeft: 12,
   },
-  sourceBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Colors.primary,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 6,
-  },
-  sourceBadgeText: {
-    color: Colors.white,
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  itemsList: {
-    marginTop: 8,
-    backgroundColor: Colors.white,
-    borderRadius: 8,
-    overflow: 'hidden',
-  },
-  itemsListRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.gray100,
-  },
-  itemsListName: {
-    fontSize: 13,
-    color: Colors.textPrimary,
-    fontWeight: '500',
-    flex: 1,
-  },
-  itemsListQtyPrice: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  itemsListQty: {
-    fontSize: 12,
-    color: Colors.textSecondary,
-  },
-  itemsListPrice: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: Colors.primary,
-  },
-  transactionDeleteButton: {
+  deleteButton: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -1001,140 +671,24 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255, 0, 0, 0.1)',
     borderRadius: 8,
     paddingVertical: 10,
-    marginTop: 8,
+    marginTop: 12,
   },
-  transactionDeleteButtonText: {
-    fontSize: 13,
+  deleteButtonText: {
+    fontSize: 14,
     fontWeight: '600',
     color: Colors.error,
   },
   loadingContainer: {
     paddingVertical: 40,
     alignItems: 'center',
-    justifyContent: 'center',
   },
   emptyContainer: {
     paddingVertical: 40,
     alignItems: 'center',
-    justifyContent: 'center',
   },
   emptyText: {
     fontSize: 15,
     color: Colors.textSecondary,
     marginTop: 12,
-  },
-  dropdownContainer: {
-    position: 'relative',
-    zIndex: 1000,
-  },
-  dropdownButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 8,
-    backgroundColor: Colors.gray100,
-  },
-  dropdownButtonText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: Colors.primary,
-  },
-  dropdownMenu: {
-    position: 'absolute',
-    top: 40,
-    right: 0,
-    backgroundColor: Colors.white,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: Colors.gray200,
-    zIndex: 10000,
-    minWidth: 80,
-    shadowColor: Colors.black,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 10,
-  },
-  dropdownOption: {
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.gray100,
-  },
-  dropdownOptionSelected: {
-    backgroundColor: Colors.primary,
-    borderBottomColor: Colors.primary,
-  },
-  dropdownOptionText: {
-    fontSize: 14,
-    color: Colors.textPrimary,
-    textAlign: 'center',
-  },
-  dropdownOptionTextSelected: {
-    color: Colors.white,
-    fontWeight: '600',
-  },
-  flipContainer: {
-    marginBottom: 16,
-    position: 'relative',
-    zIndex: 50,
-  },
-  flipCard: {
-    backfaceVisibility: 'hidden',
-    zIndex: 50,
-  },
-  flipCardBack: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    zIndex: 50,
-  },
-  paymentMethodsLoading: {
-    paddingVertical: 40,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  paymentMethodsList: {
-    marginTop: 12,
-    gap: 10,
-  },
-  paymentMethodItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    backgroundColor: 'rgba(255, 255, 255, 0.15)',
-    borderRadius: 10,
-  },
-  paymentMethodLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-  },
-  paymentMethodName: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: Colors.white,
-  },
-  paymentMethodBalance: {
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  paymentMethodPositive: {
-    color: '#4ade80',
-  },
-  paymentMethodNegative: {
-    color: '#fca5a5',
-  },
-  paymentMethodEmpty: {
-    fontSize: 14,
-    color: Colors.white,
-    opacity: 0.8,
-    textAlign: 'center',
-    paddingVertical: 20,
   },
 });

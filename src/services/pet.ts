@@ -91,6 +91,20 @@ export async function initializePet(petInfo?: {
       throw new Error('User not authenticated');
     }
 
+    // Ensure profile exists first
+    const { data: profile, error: profileError } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', user.id)
+      .single();
+
+    if (profileError && profileError.code === 'PGRST116') {
+      // Profile doesn't exist, create it
+      await supabase
+        .from('profiles')
+        .insert([{ id: user.id }]);
+    }
+
     // Create initial pet state
     const { data: petState, error: stateError } = await supabase
       .from('pet_state')
