@@ -1,11 +1,14 @@
 import React, { useMemo } from 'react';
-import { View } from 'react-native';
+import { View, Platform } from 'react-native';
 import { Tabs } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Colors } from '../../constants/theme';
 import FloatingChatButton from '../../components/floating-chat-button';
 
 export default function TabsLayout() {
+  const insets = useSafeAreaInsets();
+  
   return (
     <View style={{ flex: 1 }}>
       <Tabs
@@ -19,8 +22,8 @@ export default function TabsLayout() {
             borderTopWidth: 1,
             borderTopColor: Colors.gray200,
             paddingTop: 5,
-            paddingBottom: 5,
-            height: 52,
+            paddingBottom: Platform.OS === 'ios' ? insets.bottom : 5,
+            height: Platform.OS === 'ios' ? 52 + insets.bottom : 52,
           },
           tabBarLabelStyle: {
             fontSize: 12,

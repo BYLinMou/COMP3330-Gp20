@@ -2,6 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from './supabase';
 
 const OPENAI_CONFIG_KEY = '@openai_config';
+const OPENAI_USER_ID_KEY = '@openai_config_user_id';
 
 export interface OpenAIConfig {
   apiUrl: string;
@@ -9,6 +10,7 @@ export interface OpenAIConfig {
   receiptModel: string;
   chatModel: string;
   fallbackModel: string;
+  userId: string; // 添加用户ID字段
   // Backward compatibility
   primaryModel?: string;
 }
@@ -22,21 +24,38 @@ export interface OpenAIModel {
 /**
  * Save OpenAI configuration to local storage and Supabase
  */
-export async function saveOpenAIConfig(config: OpenAIConfig): Promise<void> {
+export async function saveOpenAIConfig(config: Omit<OpenAIConfig, 'userId'>): Promise<void> {
   console.log('[openai-config] saveOpenAIConfig called with:', {
     ...config,
     apiKey: '***HIDDEN***'
   });
   
   try {
+    // Get current user ID
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    if (authError) {
+      console.error('[openai-config] Auth error:', authError);
+      throw new Error('Not authenticated');
+    }
+    if (!user) {
+      throw new Error('No authenticated user');
+    }
+
+    const configWithUserId: OpenAIConfig = {
+      ...config,
+      userId: user.id
+    };
+
     console.log('[openai-config] Saving to AsyncStorage...');
-    // Save to local storage first
-    await AsyncStorage.setItem(OPENAI_CONFIG_KEY, JSON.stringify(config));
+    // Save config with user ID
+    await AsyncStorage.setItem(OPENAI_CONFIG_KEY, JSON.stringify(configWithUserId));
+    // Save user ID separately for quick access check
+    await AsyncStorage.setItem(OPENAI_USER_ID_KEY, user.id);
     console.log('[openai-config] Successfully saved to AsyncStorage');
     
     // Then sync to Supabase
     console.log('[openai-config] Starting Supabase sync...');
-    await syncConfigToSupabase(config);
+    await syncConfigToSupabase(configWithUserId);
     console.log('[openai-config] Supabase sync completed');
   } catch (error) {
     console.error('[openai-config] Failed to save OpenAI config:', error);
@@ -135,13 +154,56 @@ async function syncConfigToSupabase(config: OpenAIConfig): Promise<void> {
 
 /**
  * Get OpenAI configuration from local storage, with Supabase fallback
+ * Validates that the cached config belongs to the current user
  */
 export async function getOpenAIConfig(): Promise<OpenAIConfig | null> {
   try {
-    // Try local storage first
+    // Get current user
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    if (authError || !user) {
+      console.log('[openai-config] No authenticated user');
+      return null;
+    }
+
+    // Check if stored user ID matches current user
+    const storedUserId = await AsyncStorage.getItem(OPENAI_USER_ID_KEY);
+    
+    if (storedUserId !== user.id) {
+      // User has changed, clear local storage and fetch from Supabase
+      console.log('[openai-config] User changed, clearing local cache and fetching from Supabase');
+      await AsyncStorage.removeItem(OPENAI_CONFIG_KEY);
+      await AsyncStorage.removeItem(OPENAI_USER_ID_KEY);
+      
+      // Fetch from Supabase for the new user
+      const supabaseConfig = await fetchConfigFromSupabase();
+      if (supabaseConfig) {
+        // Save to local storage for next time
+        await AsyncStorage.setItem(OPENAI_CONFIG_KEY, JSON.stringify(supabaseConfig));
+        await AsyncStorage.setItem(OPENAI_USER_ID_KEY, user.id);
+        return supabaseConfig;
+      }
+      return null;
+    }
+
+    // Try local storage first (user ID matches)
     const configStr = await AsyncStorage.getItem(OPENAI_CONFIG_KEY);
     if (configStr) {
       const config = JSON.parse(configStr);
+      
+      // Double check userId in config matches current user
+      if (config.userId !== user.id) {
+        console.log('[openai-config] Config userId mismatch, refetching from Supabase');
+        await AsyncStorage.removeItem(OPENAI_CONFIG_KEY);
+        await AsyncStorage.removeItem(OPENAI_USER_ID_KEY);
+        const supabaseConfig = await fetchConfigFromSupabase();
+        if (supabaseConfig) {
+          await AsyncStorage.setItem(OPENAI_CONFIG_KEY, JSON.stringify(supabaseConfig));
+          await AsyncStorage.setItem(OPENAI_USER_ID_KEY, user.id);
+          return supabaseConfig;
+        }
+        return null;
+      }
+      
       // Migration: handle old configs with primaryModel
       if (!config.receiptModel && config.primaryModel) {
         config.receiptModel = config.primaryModel;
@@ -157,12 +219,13 @@ export async function getOpenAIConfig(): Promise<OpenAIConfig | null> {
     if (supabaseConfig) {
       // Save to local storage for next time
       await AsyncStorage.setItem(OPENAI_CONFIG_KEY, JSON.stringify(supabaseConfig));
+      await AsyncStorage.setItem(OPENAI_USER_ID_KEY, user.id);
       return supabaseConfig;
     }
 
     return null;
   } catch (error) {
-    console.error('Failed to get OpenAI config:', error);
+    console.error('[openai-config] Failed to get OpenAI config:', error);
     return null;
   }
 }
@@ -211,6 +274,7 @@ async function fetchConfigFromSupabase(): Promise<OpenAIConfig | null> {
       receiptModel: data.receipt_key,
       chatModel: data.chat_model,
       fallbackModel: data.fallback_model,
+      userId: user.id, // 添加用户ID
     };
   } catch (error) {
     console.error('[DEBUG] Failed to fetch config from Supabase:', error);
@@ -225,6 +289,7 @@ export async function clearOpenAIConfig(): Promise<void> {
   try {
     // Clear local storage
     await AsyncStorage.removeItem(OPENAI_CONFIG_KEY);
+    await AsyncStorage.removeItem(OPENAI_USER_ID_KEY);
     
     // Clear from Supabase
     await clearConfigFromSupabase();

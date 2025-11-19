@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, Dimensions, ActivityIndicator, TouchableOpacity
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
+import { useRouter } from 'expo-router';
 import { Colors } from '../../constants/theme';
 import { RefreshableScrollView } from '../../components/refreshable-scroll-view';
 import { 
@@ -14,6 +15,8 @@ import {
   type Transaction 
 } from '../../src/services/transactions';
 import { getPaymentMethods } from '../../src/services/payment-methods';
+import { getMonthlyBudgetAmount } from '../../src/services/budgets';
+import { getProfile } from '../../src/services/profiles';
 import { useAuth } from '../../src/providers/AuthProvider';
 import { getItemsByTransaction, type ItemRow, debugGetAllUserItems } from '../../src/services/items';
 
@@ -37,6 +40,7 @@ function getRelativeTime(dateString: string): string {
 
 export default function HomeScreen() {
   const { session } = useAuth();
+  const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [recentTransactions, setRecentTransactions] = useState<Transaction[]>([]);
@@ -58,7 +62,7 @@ export default function HomeScreen() {
   const cardSlideAnim = React.useRef(new Animated.Value(0)).current;
   const transactionsSlideAnim = React.useRef(new Animated.Value(0)).current;
 
-  const budget = 2000; // This could also come from Supabase
+  const [budget, setBudget] = useState(2000); // Budget from Supabase
   const budgetUsed = Math.round((spent / budget) * 100);
   const limitOptions = [5, 10, 20, 50, 100];
 
@@ -208,15 +212,20 @@ export default function HomeScreen() {
       const endDate = lastDay.toISOString().split('T')[0];
 
       // Fetch all data in parallel
-      const [transactions, stats] = await Promise.all([
+      const [transactions, stats, monthlyBudget, profile] = await Promise.all([
         getRecentTransactions(transactionLimit),
         getIncomeAndExpenses(startDate, endDate),
+        getMonthlyBudgetAmount(),
+        getProfile(),
       ]);
 
       setRecentTransactions(transactions);
-      setIncome(stats.income);
+      // Use profile income if set, otherwise use calculated income from transactions
+      setIncome(profile?.income || stats.income);
       setSpent(stats.expenses);
-      setBalance(stats.balance);
+      // Balance = income - expenses
+      setBalance((profile?.income || stats.income) - stats.expenses);
+      setBudget(monthlyBudget);
       
       // Debug: 检查所有 items
       try {
@@ -243,15 +252,20 @@ export default function HomeScreen() {
       const endDate = lastDay.toISOString().split('T')[0];
 
       // Fetch all data in parallel
-      const [transactions, stats] = await Promise.all([
+      const [transactions, stats, monthlyBudget, profile] = await Promise.all([
         getRecentTransactions(transactionLimit),
         getIncomeAndExpenses(startDate, endDate),
+        getMonthlyBudgetAmount(),
+        getProfile(),
       ]);
 
       setRecentTransactions(transactions);
-      setIncome(stats.income);
+      // Use profile income if set, otherwise use calculated income from transactions
+      setIncome(profile?.income || stats.income);
       setSpent(stats.expenses);
-      setBalance(stats.balance);
+      // Balance = income - expenses
+      setBalance((profile?.income || stats.income) - stats.expenses);
+      setBudget(monthlyBudget);
     } catch (error) {
       console.error('Error refreshing dashboard data:', error);
     } finally {
@@ -433,6 +447,49 @@ export default function HomeScreen() {
             <Ionicons name="alert-circle" size={16} color={Colors.error} />
             <Text style={styles.warningText}>You're close to your budget limit!</Text>
           </View>
+        </Animated.View>
+        )}
+
+        {/* View All Transactions Card */}
+        {!isFlipped && showCardContent && (
+        <Animated.View
+          style={[
+            styles.card,
+            {
+              transform: [
+                {
+                  translateY: cardSlideAnim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [50, 0],
+                  }),
+                },
+              ],
+              opacity: cardSlideAnim.interpolate({
+                inputRange: [0, 1],
+                outputRange: [0, 1],
+              }),
+            },
+          ]}
+        >
+          <TouchableOpacity
+            style={styles.viewAllTransactionsCard}
+            onPress={() => {
+              // @ts-ignore - Expo Router navigation
+              router.push('/all-transactions');
+            }}
+            activeOpacity={0.7}
+          >
+            <View style={styles.viewAllTransactionsLeft}>
+              <Ionicons name="list-outline" size={28} color={Colors.primary} />
+              <View style={styles.viewAllTransactionsText}>
+                <Text style={styles.viewAllTransactionsTitle}>View All Transactions</Text>
+                <Text style={styles.viewAllTransactionsSubtitle}>
+                  Search and filter your transactions
+                </Text>
+              </View>
+            </View>
+            <Ionicons name="chevron-forward" size={24} color={Colors.primary} />
+          </TouchableOpacity>
         </Animated.View>
         )}
 
@@ -688,24 +745,36 @@ export default function HomeScreen() {
                     {(() => {
                       const items = transactionItems[transaction.id];
                       console.log(`[DEBUG] Rendering items for ${transaction.id}:`, items);
-                      return items && items.length > 0 && (
-                        <View style={styles.expandedDetailRow}>
-                          <Text style={styles.expandedDetailLabel}>Items ({items.length})</Text>
-                          <View style={styles.itemsList}>
-                            {items.map((item, index) => (
-                              <View key={item.id || index} style={styles.itemsListRow}>
-                                <Text style={styles.itemsListName}>{item.item_name}</Text>
-                                <View style={styles.itemsListQtyPrice}>
-                                  <Text style={styles.itemsListQty}>×{item.item_amount}</Text>
-                                  <Text style={styles.itemsListPrice}>
-                                    ${(item.item_price * item.item_amount).toFixed(2)}
-                                  </Text>
+                      if (items && items.length > 0) {
+                        return (
+                          <View style={styles.expandedDetailSection}>
+                            {items.map((item, index) => {
+                              console.log(`[DEBUG] Rendering item ${index}:`, item.item_name);
+                              return (
+                                <View key={item.id || index} style={styles.expandedDetailRow}>
+                                  <Text style={styles.expandedDetailLabel}>Item {index + 1}</Text>
+                                  <View style={styles.itemDetailContainer}>
+                                    <Text 
+                                      style={styles.itemDetailName}
+                                      numberOfLines={2}
+                                      ellipsizeMode="tail"
+                                    >
+                                      {item.item_name || 'Unknown Item'}
+                                    </Text>
+                                    <View style={styles.itemDetailQtyPrice}>
+                                      <Text style={styles.itemDetailQty}>Qty: {item.item_amount}</Text>
+                                      <Text style={styles.itemDetailPrice}>
+                                        ${(item.item_price * item.item_amount).toFixed(2)}
+                                      </Text>
+                                    </View>
+                                  </View>
                                 </View>
-                              </View>
-                            ))}
+                              );
+                            })}
                           </View>
-                        </View>
-                      );
+                        );
+                      }
+                      return null;
                     })()}
 
                     {/* Notes */}
@@ -837,6 +906,31 @@ const styles = StyleSheet.create({
     color: Colors.textPrimary,
     marginBottom: 12,
   },
+  viewAllTransactionsCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: 16,
+  },
+  viewAllTransactionsLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    flex: 1,
+  },
+  viewAllTransactionsText: {
+    flex: 1,
+  },
+  viewAllTransactionsTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: Colors.textPrimary,
+    marginBottom: 4,
+  },
+  viewAllTransactionsSubtitle: {
+    fontSize: 13,
+    color: Colors.textSecondary,
+  },
   badge: {
     backgroundColor: Colors.error,
     paddingHorizontal: 10,
@@ -962,10 +1056,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 8,
   },
+  expandedDetailSection: {
+    paddingVertical: 8,
+  },
   expandedDetailLabel: {
     fontSize: 13,
     fontWeight: '600',
     color: Colors.textSecondary,
+    marginBottom: 8,
   },
   expandedDetailValue: {
     fontSize: 13,
@@ -988,37 +1086,27 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
   },
-  itemsList: {
-    marginTop: 8,
-    backgroundColor: Colors.white,
-    borderRadius: 8,
-    overflow: 'hidden',
+  itemDetailContainer: {
+    flex: 1,
+    marginLeft: 12,
   },
-  itemsListRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.gray100,
-  },
-  itemsListName: {
+  itemDetailName: {
     fontSize: 13,
     color: Colors.textPrimary,
     fontWeight: '500',
-    flex: 1,
+    marginBottom: 4,
+    lineHeight: 18,
   },
-  itemsListQtyPrice: {
+  itemDetailQtyPrice: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    justifyContent: 'space-between',
   },
-  itemsListQty: {
+  itemDetailQty: {
     fontSize: 12,
     color: Colors.textSecondary,
   },
-  itemsListPrice: {
+  itemDetailPrice: {
     fontSize: 13,
     fontWeight: '600',
     color: Colors.primary,
