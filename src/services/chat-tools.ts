@@ -246,7 +246,7 @@ export const transactionTools: Tool[] = [
         },
         merchant: {
           type: 'string',
-          description: 'Merchant name (optional)'
+          description: 'Merchant name'
         },
         category_id: {
           type: 'string',

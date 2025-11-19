@@ -342,24 +342,33 @@ export default function AllTransactionsScreen() {
             {/* Items */}
             {(() => {
               const items = transactionItems[item.id];
-              return items && items.length > 0 && (
-                <View style={styles.expandedDetailRow}>
-                  <Text style={styles.expandedDetailLabel}>Items ({items.length})</Text>
-                  <View style={styles.itemsList}>
+              if (items && items.length > 0) {
+                return (
+                  <View style={styles.expandedDetailSection}>
                     {items.map((transItem, index) => (
-                      <View key={transItem.id || index} style={styles.itemsListRow}>
-                        <Text style={styles.itemsListName}>{transItem.item_name}</Text>
-                        <View style={styles.itemsListQtyPrice}>
-                          <Text style={styles.itemsListQty}>×{transItem.item_amount}</Text>
-                          <Text style={styles.itemsListPrice}>
-                            ${(transItem.item_price * transItem.item_amount).toFixed(2)}
+                      <View key={transItem.id || index} style={styles.expandedDetailRow}>
+                        <Text style={styles.expandedDetailLabel}>Item {index + 1}</Text>
+                        <View style={styles.itemDetailContainer}>
+                          <Text 
+                            style={styles.itemDetailName}
+                            numberOfLines={2}
+                            ellipsizeMode="tail"
+                          >
+                            {transItem.item_name || 'Unknown Item'}
                           </Text>
+                          <View style={styles.itemDetailQtyPrice}>
+                            <Text style={styles.itemDetailQty}>Qty: {transItem.item_amount}</Text>
+                            <Text style={styles.itemDetailPrice}>
+                              ${(transItem.item_price * transItem.item_amount).toFixed(2)}
+                            </Text>
+                          </View>
                         </View>
                       </View>
                     ))}
                   </View>
-                </View>
-              );
+                );
+              }
+              return null;
             })()}
 
             {/* Notes */}
@@ -873,10 +882,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 8,
   },
+  expandedDetailSection: {
+    paddingVertical: 8,
+  },
   expandedDetailLabel: {
     fontSize: 13,
     fontWeight: '600',
     color: Colors.textSecondary,
+    marginBottom: 8,
   },
   expandedDetailValue: {
     fontSize: 13,
@@ -898,6 +911,31 @@ const styles = StyleSheet.create({
     color: Colors.white,
     fontSize: 12,
     fontWeight: '600',
+  },
+  itemDetailContainer: {
+    flex: 1,
+    marginLeft: 12,
+  },
+  itemDetailName: {
+    fontSize: 13,
+    color: Colors.textPrimary,
+    fontWeight: '500',
+    marginBottom: 4,
+    lineHeight: 18,
+  },
+  itemDetailQtyPrice: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  itemDetailQty: {
+    fontSize: 12,
+    color: Colors.textSecondary,
+  },
+  itemDetailPrice: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: Colors.primary,
   },
   itemsList: {
     marginTop: 8,

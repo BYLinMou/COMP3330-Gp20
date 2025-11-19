@@ -9,6 +9,13 @@ import {
   getSpendingBreakdown,
   type Transaction 
 } from '../../src/services/transactions';
+import { 
+  getMonthlyTrends, 
+  getWeeklySpending, 
+  getSpendingSummary,
+  type MonthlyTrend,
+  type WeeklySpending,
+} from '../../src/services/reports';
 import { useAuth } from '../../src/providers/AuthProvider';
 
 const { width } = Dimensions.get('window');
@@ -26,15 +33,18 @@ export default function ReportsScreen() {
     color: string;
     percentage: number;
   }>>([]);
+  const [totalIncome, setTotalIncome] = useState(0);
+  const [totalSpent, setTotalSpent] = useState(0);
+  const [monthlyTrends, setMonthlyTrends] = useState<MonthlyTrend[]>([]);
+  const [weeklyData, setWeeklyData] = useState<WeeklySpending[]>([]);
 
-  const totalIncome = 2500.00;
-  const totalSpent = 192.50;
-
-  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'];
-  const actualSpending = [1800, 2100, 1650, 1900, 2200, 1700];
-  const budgetTarget = [2000, 2000, 2000, 2000, 2000, 2000];
-
-  const maxValue = Math.max(...actualSpending, ...budgetTarget);
+  // Calculate maxValue from monthlyTrends dynamically
+  const maxValue = monthlyTrends.length > 0 
+    ? Math.max(
+        ...monthlyTrends.map(t => t.actualSpending),
+        ...monthlyTrends.map(t => t.budgetTarget)
+      ) 
+    : 2200;
 
   // Category color mapping
   const categoryColors: Record<string, string> = {
@@ -48,22 +58,34 @@ export default function ReportsScreen() {
 
   useEffect(() => {
     if (session) {
-      loadSpendingData();
+      loadAllData();
     }
   }, [session]);
 
-  async function loadSpendingData() {
+  async function loadAllData() {
     try {
       setLoading(true);
+      
+      // Get current month date range
       const now = new Date();
       const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
       const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-      
       const startDate = firstDay.toISOString().split('T')[0];
       const endDate = lastDay.toISOString().split('T')[0];
 
-      const breakdown = await getSpendingBreakdown(startDate, endDate);
-      
+      // Load all data in parallel
+      const [summary, breakdown, trends, weekly] = await Promise.all([
+        getSpendingSummary(startDate, endDate),
+        getSpendingBreakdown(startDate, endDate),
+        getMonthlyTrends(6),
+        getWeeklySpending(),
+      ]);
+
+      // Update summary
+      setTotalIncome(summary.totalIncome);
+      setTotalSpent(summary.totalExpenses);
+
+      // Update breakdown
       const total = Object.values(breakdown).reduce<number>((sum, val) => sum + (val as number), 0);
       const chartData = Object.entries(breakdown).map(([category, amount]) => ({
         category,
@@ -71,10 +93,15 @@ export default function ReportsScreen() {
         color: categoryColors[category] || Colors.chartPurple,
         percentage: Math.round(((amount as number) / total) * 100),
       }));
-      
       setSpendingData(chartData);
+
+      // Update trends
+      setMonthlyTrends(trends);
+
+      // Update weekly
+      setWeeklyData(weekly);
     } catch (error) {
-      console.error('Error loading spending data:', error);
+      console.error('Error loading data:', error);
     } finally {
       setLoading(false);
     }
@@ -83,26 +110,9 @@ export default function ReportsScreen() {
   async function onRefresh() {
     setRefreshing(true);
     try {
-      const now = new Date();
-      const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
-      const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-      
-      const startDate = firstDay.toISOString().split('T')[0];
-      const endDate = lastDay.toISOString().split('T')[0];
-
-      const breakdown = await getSpendingBreakdown(startDate, endDate);
-      
-      const total = Object.values(breakdown).reduce<number>((sum, val) => sum + (val as number), 0);
-      const chartData = Object.entries(breakdown).map(([category, amount]) => ({
-        category,
-        amount: amount as number,
-        color: categoryColors[category] || Colors.chartPurple,
-        percentage: Math.round(((amount as number) / total) * 100),
-      }));
-      
-      setSpendingData(chartData);
+      await loadAllData();
     } catch (error) {
-      console.error('Error refreshing spending data:', error);
+      console.error('Error refreshing data:', error);
     } finally {
       setRefreshing(false);
     }
@@ -195,43 +205,51 @@ export default function ReportsScreen() {
                   ))}
                 </View>
 
-                {/* Data points and lines */}
-                <View style={styles.dataContainer}>
-                  {months.map((month, index) => {
-                    const actualHeight = (actualSpending[index] / maxValue) * 140;
-                    const budgetHeight = (budgetTarget[index] / maxValue) * 140;
+                {loading || monthlyTrends.length === 0 ? (
+                  <View style={styles.chartPlaceholder}>
+                    <Text style={styles.placeholderText}>Loading trends...</Text>
+                  </View>
+                ) : (
+                  <>
+                    {/* Data points and lines */}
+                    <View style={styles.dataContainer}>
+                      {monthlyTrends.map((trend, index) => {
+                        const actualHeight = (trend.actualSpending / maxValue) * 140;
+                        const budgetHeight = (trend.budgetTarget / maxValue) * 140;
 
-                    return (
-                      <View key={month} style={styles.dataColumn}>
-                        {/* Budget line point */}
-                        <View
-                          style={[
-                            styles.dataPoint,
-                            styles.budgetPoint,
-                            { bottom: budgetHeight },
-                          ]}
-                        />
-                        {/* Actual line point */}
-                        <View
-                          style={[
-                            styles.dataPoint,
-                            styles.actualPoint,
-                            { bottom: actualHeight },
-                          ]}
-                        />
-                      </View>
-                    );
-                  })}
-                </View>
+                        return (
+                          <View key={`${trend.month}-${trend.year}`} style={styles.dataColumn}>
+                            {/* Budget line point */}
+                            <View
+                              style={[
+                                styles.dataPoint,
+                                styles.budgetPoint,
+                                { bottom: budgetHeight },
+                              ]}
+                            />
+                            {/* Actual line point */}
+                            <View
+                              style={[
+                                styles.dataPoint,
+                                styles.actualPoint,
+                                { bottom: actualHeight },
+                              ]}
+                            />
+                          </View>
+                        );
+                      })}
+                    </View>
 
-                {/* X-axis labels */}
-                <View style={styles.xAxisLabels}>
-                  {months.map((month) => (
-                    <Text key={month} style={styles.xAxisLabel}>
-                      {month}
-                    </Text>
-                  ))}
-                </View>
+                    {/* X-axis labels */}
+                    <View style={styles.xAxisLabels}>
+                      {monthlyTrends.map((trend) => (
+                        <Text key={`${trend.month}-${trend.year}`} style={styles.xAxisLabel}>
+                          {trend.month}
+                        </Text>
+                      ))}
+                    </View>
+                  </>
+                )}
               </View>
             </View>
 
@@ -331,19 +349,31 @@ export default function ReportsScreen() {
         {activeTab === 'weekly' && (
           <View style={styles.card}>
             <Text style={styles.cardTitle}>This Week</Text>
-            <View style={styles.weekChart}>
-              {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((day, index) => {
-                const heights = [60, 40, 70, 30, 80, 95, 75];
-                return (
-                  <View key={day} style={styles.barContainer}>
-                    <View style={styles.barWrapper}>
-                      <View style={[styles.bar, { height: heights[index] }]} />
+            <Text style={styles.cardSubtitle}>Daily spending breakdown</Text>
+            {loading || weeklyData.length === 0 ? (
+              <View style={styles.loadingContainer}>
+                <ActivityIndicator size="large" color={Colors.primary} />
+              </View>
+            ) : (
+              <View style={styles.weekChart}>
+                {weeklyData.map((dayData) => {
+                  const maxWeeklyAmount = Math.max(...weeklyData.map(d => d.amount), 100);
+                  const height = (dayData.amount / maxWeeklyAmount) * 100;
+                  return (
+                    <View key={dayData.day} style={styles.barContainer}>
+                      <View style={styles.barWrapper}>
+                        <View style={[styles.bar, { height: Math.max(height, 5) }]}>
+                          {dayData.amount > 0 && (
+                            <Text style={styles.barAmount}>${dayData.amount.toFixed(0)}</Text>
+                          )}
+                        </View>
+                      </View>
+                      <Text style={styles.barLabel}>{dayData.day}</Text>
                     </View>
-                    <Text style={styles.barLabel}>{day}</Text>
-                  </View>
-                );
-              })}
-            </View>
+                  );
+                })}
+              </View>
+            )}
           </View>
         )}
 
@@ -609,9 +639,27 @@ const styles = StyleSheet.create({
     width: 28,
     backgroundColor: Colors.primary,
     borderRadius: 4,
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+    paddingTop: 4,
+  },
+  barAmount: {
+    fontSize: 9,
+    fontWeight: '600',
+    color: Colors.white,
   },
   barLabel: {
     fontSize: 11,
+    color: Colors.textSecondary,
+  },
+  chartPlaceholder: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 40,
+  },
+  placeholderText: {
+    fontSize: 14,
     color: Colors.textSecondary,
   },
   // Empty and loading states

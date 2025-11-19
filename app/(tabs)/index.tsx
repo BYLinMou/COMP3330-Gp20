@@ -733,24 +733,36 @@ export default function HomeScreen() {
                     {(() => {
                       const items = transactionItems[transaction.id];
                       console.log(`[DEBUG] Rendering items for ${transaction.id}:`, items);
-                      return items && items.length > 0 && (
-                        <View style={styles.expandedDetailRow}>
-                          <Text style={styles.expandedDetailLabel}>Items ({items.length})</Text>
-                          <View style={styles.itemsList}>
-                            {items.map((item, index) => (
-                              <View key={item.id || index} style={styles.itemsListRow}>
-                                <Text style={styles.itemsListName}>{item.item_name}</Text>
-                                <View style={styles.itemsListQtyPrice}>
-                                  <Text style={styles.itemsListQty}>×{item.item_amount}</Text>
-                                  <Text style={styles.itemsListPrice}>
-                                    ${(item.item_price * item.item_amount).toFixed(2)}
-                                  </Text>
+                      if (items && items.length > 0) {
+                        return (
+                          <View style={styles.expandedDetailSection}>
+                            {items.map((item, index) => {
+                              console.log(`[DEBUG] Rendering item ${index}:`, item.item_name);
+                              return (
+                                <View key={item.id || index} style={styles.expandedDetailRow}>
+                                  <Text style={styles.expandedDetailLabel}>Item {index + 1}</Text>
+                                  <View style={styles.itemDetailContainer}>
+                                    <Text 
+                                      style={styles.itemDetailName}
+                                      numberOfLines={2}
+                                      ellipsizeMode="tail"
+                                    >
+                                      {item.item_name || 'Unknown Item'}
+                                    </Text>
+                                    <View style={styles.itemDetailQtyPrice}>
+                                      <Text style={styles.itemDetailQty}>Qty: {item.item_amount}</Text>
+                                      <Text style={styles.itemDetailPrice}>
+                                        ${(item.item_price * item.item_amount).toFixed(2)}
+                                      </Text>
+                                    </View>
+                                  </View>
                                 </View>
-                              </View>
-                            ))}
+                              );
+                            })}
                           </View>
-                        </View>
-                      );
+                        );
+                      }
+                      return null;
                     })()}
 
                     {/* Notes */}
@@ -1032,10 +1044,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingVertical: 8,
   },
+  expandedDetailSection: {
+    paddingVertical: 8,
+  },
   expandedDetailLabel: {
     fontSize: 13,
     fontWeight: '600',
     color: Colors.textSecondary,
+    marginBottom: 8,
   },
   expandedDetailValue: {
     fontSize: 13,
@@ -1058,37 +1074,27 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
   },
-  itemsList: {
-    marginTop: 8,
-    backgroundColor: Colors.white,
-    borderRadius: 8,
-    overflow: 'hidden',
+  itemDetailContainer: {
+    flex: 1,
+    marginLeft: 12,
   },
-  itemsListRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.gray100,
-  },
-  itemsListName: {
+  itemDetailName: {
     fontSize: 13,
     color: Colors.textPrimary,
     fontWeight: '500',
-    flex: 1,
+    marginBottom: 4,
+    lineHeight: 18,
   },
-  itemsListQtyPrice: {
+  itemDetailQtyPrice: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
+    justifyContent: 'space-between',
   },
-  itemsListQty: {
+  itemDetailQty: {
     fontSize: 12,
     color: Colors.textSecondary,
   },
-  itemsListPrice: {
+  itemDetailPrice: {
     fontSize: 13,
     fontWeight: '600',
     color: Colors.primary,
