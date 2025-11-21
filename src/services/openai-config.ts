@@ -1,8 +1,8 @@
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { supabase } from './supabase';
 
-const OPENAI_CONFIG_KEY = '@openai_config';
-const OPENAI_USER_ID_KEY = '@openai_config_user_id';
+// In-memory cache for OpenAI config
+// This ensures data is cleared when the app is closed or user logs out
+let cachedConfig: OpenAIConfig | null = null;
 
 export interface OpenAIConfig {
   apiUrl: string;
@@ -46,12 +46,10 @@ export async function saveOpenAIConfig(config: Omit<OpenAIConfig, 'userId'>): Pr
       userId: user.id
     };
 
-    console.log('[openai-config] Saving to AsyncStorage...');
-    // Save config with user ID
-    await AsyncStorage.setItem(OPENAI_CONFIG_KEY, JSON.stringify(configWithUserId));
-    // Save user ID separately for quick access check
-    await AsyncStorage.setItem(OPENAI_USER_ID_KEY, user.id);
-    console.log('[openai-config] Successfully saved to AsyncStorage');
+    console.log('[openai-config] Saving to in-memory cache...');
+    // Save config to in-memory cache
+    cachedConfig = configWithUserId;
+    console.log('[openai-config] Successfully saved to in-memory cache');
     
     // Then sync to Supabase
     console.log('[openai-config] Starting Supabase sync...');
@@ -165,61 +163,18 @@ export async function getOpenAIConfig(): Promise<OpenAIConfig | null> {
       return null;
     }
 
-    // Check if stored user ID matches current user
-    const storedUserId = await AsyncStorage.getItem(OPENAI_USER_ID_KEY);
-    
-    if (storedUserId !== user.id) {
-      // User has changed, clear local storage and fetch from Supabase
-      console.log('[openai-config] User changed, clearing local cache and fetching from Supabase');
-      await AsyncStorage.removeItem(OPENAI_CONFIG_KEY);
-      await AsyncStorage.removeItem(OPENAI_USER_ID_KEY);
-      
-      // Fetch from Supabase for the new user
-      const supabaseConfig = await fetchConfigFromSupabase();
-      if (supabaseConfig) {
-        // Save to local storage for next time
-        await AsyncStorage.setItem(OPENAI_CONFIG_KEY, JSON.stringify(supabaseConfig));
-        await AsyncStorage.setItem(OPENAI_USER_ID_KEY, user.id);
-        return supabaseConfig;
-      }
-      return null;
+    // Check if cached user ID matches current user
+    if (cachedConfig && cachedConfig.userId === user.id) {
+      return cachedConfig;
     }
 
-    // Try local storage first (user ID matches)
-    const configStr = await AsyncStorage.getItem(OPENAI_CONFIG_KEY);
-    if (configStr) {
-      const config = JSON.parse(configStr);
-      
-      // Double check userId in config matches current user
-      if (config.userId !== user.id) {
-        console.log('[openai-config] Config userId mismatch, refetching from Supabase');
-        await AsyncStorage.removeItem(OPENAI_CONFIG_KEY);
-        await AsyncStorage.removeItem(OPENAI_USER_ID_KEY);
-        const supabaseConfig = await fetchConfigFromSupabase();
-        if (supabaseConfig) {
-          await AsyncStorage.setItem(OPENAI_CONFIG_KEY, JSON.stringify(supabaseConfig));
-          await AsyncStorage.setItem(OPENAI_USER_ID_KEY, user.id);
-          return supabaseConfig;
-        }
-        return null;
-      }
-      
-      // Migration: handle old configs with primaryModel
-      if (!config.receiptModel && config.primaryModel) {
-        config.receiptModel = config.primaryModel;
-      }
-      if (!config.chatModel) {
-        config.chatModel = config.primaryModel || '';
-      }
-      return config;
-    }
-
-    // If not in local storage, try to fetch from Supabase
+    // If not in cache or user changed, fetch from Supabase
+    console.log('[openai-config] Fetching from Supabase...');
     const supabaseConfig = await fetchConfigFromSupabase();
+    
     if (supabaseConfig) {
-      // Save to local storage for next time
-      await AsyncStorage.setItem(OPENAI_CONFIG_KEY, JSON.stringify(supabaseConfig));
-      await AsyncStorage.setItem(OPENAI_USER_ID_KEY, user.id);
+      // Save to in-memory cache
+      cachedConfig = supabaseConfig;
       return supabaseConfig;
     }
 
@@ -287,9 +242,8 @@ async function fetchConfigFromSupabase(): Promise<OpenAIConfig | null> {
  */
 export async function clearOpenAIConfig(): Promise<void> {
   try {
-    // Clear local storage
-    await AsyncStorage.removeItem(OPENAI_CONFIG_KEY);
-    await AsyncStorage.removeItem(OPENAI_USER_ID_KEY);
+    // Clear in-memory cache
+    cachedConfig = null;
     
     // Clear from Supabase
     await clearConfigFromSupabase();
